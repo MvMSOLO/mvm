@@ -1,14 +1,15 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { PhoneSceneEngine } from '$lib/3d/phoneEngine.js';
-  import { gsap } from 'gsap';
+  import { ScrollController } from '$lib/3d/ScrollController.js';
+  import ProgressRail from '$lib/components/ProgressRail.svelte';
 
   // Configurator state
   let selectedModel = $state('NOVA ONE');
   let selectedFinish = $state('Titanium');
   let selectedStorage = $state('512GB');
 
-  // Interactive cursor
+  // Interactive mouse parallax & cursor
   let cursorX = $state(-100);
   let cursorY = $state(-100);
   let isCursorHovered = $state(false);
@@ -31,9 +32,13 @@
 
   let canvasContainer;
   let engine = null;
+  let scrollController = null;
+  let currentProg = $state(0);
+  let animFrameId = null;
 
   onMount(() => {
-    // Initialize 3D WebGL Engine
+    scrollController = new ScrollController();
+
     if (canvasContainer) {
       engine = new PhoneSceneEngine(canvasContainer, {
         onProgress: (prog) => {
@@ -51,43 +56,26 @@
       }, 600);
     }
 
-    // GSAP ScrollTrigger timeline mapping for 120FPS smooth scroll synchronization
-    const handleScroll = () => {
-      const scrollTop = window.scrollY;
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = Math.min(Math.max(scrollTop / (maxScroll || 1), 0), 1);
-
-      let currentSec = 'HERO';
-      if (progress > 0.12) currentSec = 'DISPLAY';
-      if (progress > 0.27) currentSec = 'EXPLODED';
-      if (progress > 0.42) currentSec = 'CAMERA';
-      if (progress > 0.56) currentSec = 'PERFORMANCE';
-      if (progress > 0.68) currentSec = 'BATTERY';
-      if (progress > 0.78) currentSec = 'AI';
-      if (progress > 0.88) currentSec = 'FINAL';
-
-      if (engine) {
-        gsap.to(engine, {
-          duration: 0.1,
-          ease: 'power1.out',
-          onUpdate: () => {
-            engine.updateScrollProgress(progress, currentSec);
-          }
-        });
+    const updateLoop = () => {
+      animFrameId = requestAnimationFrame(updateLoop);
+      if (scrollController && engine) {
+        currentProg = scrollController.update();
+        engine.updateProgress(currentProg);
       }
     };
+    animFrameId = requestAnimationFrame(updateLoop);
 
     const handleMouseMove = (e) => {
       cursorX = e.clientX;
       cursorY = e.clientY;
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
     return () => {
-      window.removeEventListener('scroll', handleScroll);
+      cancelAnimationFrame(animFrameId);
       window.removeEventListener('mousemove', handleMouseMove);
+      if (scrollController) scrollController.destroy();
       if (engine) engine.destroy();
     };
   });
@@ -100,8 +88,11 @@
 
 <svelte:head>
   <title>NOVA ONE — The Next Form</title>
-  <meta name="description" content="Flagship smartphone experience built on high performance WebGL and 120FPS architecture." />
+  <meta name="description" content="Cinematic 3D flagship smartphone web experience." />
 </svelte:head>
+
+<!-- Vertical Progress Rail -->
+<ProgressRail progress={currentProg} />
 
 <!-- Custom Cursor (Desktop) -->
 <div
@@ -114,7 +105,15 @@
   <div class="loader-overlay">
     <div class="loader-content">
       <h1 class="loader-logo">NOVA</h1>
-      <p class="loader-subtitle">INITIALIZING EXPERIENCE</p>
+      <p class="loader-subtitle">BUILDING EXPERIENCE</p>
+
+      <div class="checklist">
+        <div class="check-item"><span>GLASS</span> <span class="check-mark">✓</span></div>
+        <div class="check-item"><span>OLED DISPLAY</span> <span class="check-mark">✓</span></div>
+        <div class="check-item"><span>PENTA OPTICS</span> <span class="check-mark">✓</span></div>
+        <div class="check-item"><span>NEURAL CORE</span> <span class="check-mark">✓</span></div>
+      </div>
+
       <div class="loader-bar-bg">
         <div class="loader-bar-fill" style="width: {loadProgress}%;"></div>
       </div>
@@ -123,7 +122,7 @@
   </div>
 {/if}
 
-<!-- Fixed 3D Canvas Background -->
+<!-- Fixed 3D Canvas Viewport -->
 <div class="canvas-viewport" bind:this={canvasContainer}></div>
 
 <!-- Sticky Header & Mobile Drawer -->
@@ -134,9 +133,9 @@
     <nav class="desktop-nav">
       <a href="#hero" class="nav-item">FORM</a>
       <a href="#display" class="nav-item">DISPLAY</a>
-      <a href="#exploded" class="nav-item">EXPLODED</a>
-      <a href="#camera" class="nav-item">CAMERA</a>
-      <a href="#performance" class="nav-item">PERFORMANCE</a>
+      <a href="#camera" class="nav-item">OPTICS</a>
+      <a href="#exploded" class="nav-item">ARCHITECTURE</a>
+      <a href="#performance" class="nav-item">NPU</a>
       <a href="#configurator" class="nav-item">PRE-ORDER</a>
     </nav>
 
@@ -165,14 +164,14 @@
 <main class="content-container">
   <!-- 01. HERO SECTION -->
   <section id="hero" class="hero-section">
-    <div class="hero-content">
-      <span class="eyebrow">NOVA ONE</span>
-      <h1 class="hero-title">THE NEXT FORM</h1>
-      <p class="hero-desc">
-        Monolithic grade 5 titanium chassis, 120Hz Pure Motion OLED, and penta-lens computational camera array.
-      </p>
-      <div class="scroll-indicator">
-        <span class="scroll-text">SCROLL TO EXPLORE</span>
+    <div class="hero-editorial-grid">
+      <div class="hero-title-group">
+        <span class="eyebrow">NOVA ONE</span>
+        <h1 class="hero-title">THE NEXT<br />FORM.</h1>
+      </div>
+      <div class="hero-meta">
+        <span class="meta-num">01 / 08</span>
+        <span class="meta-label">SCROLL TO EXPLORE</span>
         <div class="scroll-line"></div>
       </div>
     </div>
@@ -180,8 +179,8 @@
 
   <!-- 02. DISPLAY SECTION -->
   <section id="display" class="section-wrapper display-section">
-    <div class="section-card left">
-      <span class="badge">DISPLAY</span>
+    <div class="editorial-card left">
+      <span class="badge">02 — DISPLAY</span>
       <h2>120Hz PURE MOTION</h2>
       <p>
         Adaptive OLED panel with 0.0ms pixel response latency. Dynamic sweep GLSL shader calibration for absolute color precision and zero eye strain.
@@ -189,10 +188,25 @@
     </div>
   </section>
 
-  <!-- 03. EXPLODED VIEW SECTION -->
+  <!-- 03. MACRO CAMERA SECTION -->
+  <section id="camera" class="section-wrapper camera-section">
+    <div class="editorial-card right">
+      <span class="badge">03 — OPTICS</span>
+      <h2>SEE MORE.</h2>
+      <p>
+        Five lens modules engineered with optical sapphire glass and periscope zoom architecture. Capture high-fidelity raw detail in low light.
+      </p>
+      <div class="spec-callout">
+        <span class="callout-num">50 MP</span>
+        <span class="callout-label">PURE DETAIL SENSOR</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04. EXPLODED VIEW SECTION -->
   <section id="exploded" class="section-wrapper exploded-section">
-    <div class="section-card right">
-      <span class="badge">INTERNAL ARCHITECTURE</span>
+    <div class="editorial-card left">
+      <span class="badge">04 — ARCHITECTURE</span>
       <h2>PRECISION ENGINEERED</h2>
       <p>
         Each structural layer is independently aligned on a rigid titanium frame. Unrestricted thermal dispersal and high structural resilience.
@@ -209,21 +223,10 @@
     </div>
   </section>
 
-  <!-- 04. CAMERA SECTION -->
-  <section id="camera" class="section-wrapper camera-section">
-    <div class="section-card left">
-      <span class="badge">OPTICS</span>
-      <h2>SEE MORE.</h2>
-      <p>
-        Five lens modules engineered with optical sapphire glass and periscope zoom architecture. Capture high-fidelity raw detail in low light.
-      </p>
-    </div>
-  </section>
-
   <!-- 05. PERFORMANCE SECTION -->
   <section id="performance" class="section-wrapper performance-section">
-    <div class="section-card right">
-      <span class="badge">COMPUTE ENGINE</span>
+    <div class="editorial-card right">
+      <span class="badge">05 — COMPUTE ENGINE</span>
       <h2>4nm NPU ARCHITECTURE</h2>
       <p>
         On-device real-time neural inference with dedicated array accelerators. Instantaneous computational photography and multi-thread efficiency.
@@ -233,8 +236,8 @@
 
   <!-- 06. BATTERY & ENERGY SECTION -->
   <section id="battery" class="section-wrapper battery-section">
-    <div class="section-card left">
-      <span class="badge">ENERGY</span>
+    <div class="editorial-card left">
+      <span class="badge">06 — ENERGY</span>
       <h2>5000mAh ARCHITECTURE</h2>
       <p>
         Ultra-high energy density cell designed for continuous high-load GPU/NPU throughput. Smart charging logic ensures long-term longevity.
@@ -245,7 +248,7 @@
   <!-- 07. PRODUCT CONFIGURATOR -->
   <section id="configurator" class="configurator-section">
     <div class="config-container">
-      <span class="badge">CONFIGURATOR</span>
+      <span class="badge">07 — CONFIGURATOR</span>
       <h2>SELECT YOUR SPECIFICATION</h2>
 
       <div class="config-grid">
@@ -351,7 +354,7 @@
   :global(html, body) {
     margin: 0;
     padding: 0;
-    background-color: #050508;
+    background-color: #050609;
     color: #ffffff;
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
     overflow-x: hidden;
@@ -359,7 +362,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Fixed 3D Canvas */
+  /* Canvas Viewport */
   .canvas-viewport {
     position: fixed;
     top: 0;
@@ -381,7 +384,7 @@
     border-radius: 50%;
     pointer-events: none;
     z-index: 9999;
-    transition: transform 0.05s linear, width 0.2s, height 0.2s, background-color 0.2s;
+    transition: transform 0.05s linear;
     mix-blend-mode: difference;
   }
 
@@ -389,7 +392,7 @@
   .loader-overlay {
     position: fixed;
     inset: 0;
-    background: #050508;
+    background: #050609;
     z-index: 10000;
     display: flex;
     align-items: center;
@@ -408,7 +411,19 @@
     font-size: 0.75rem;
     letter-spacing: 0.2rem;
     color: #888;
+    margin-bottom: 1.5rem;
+  }
+  .checklist {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
     margin-bottom: 2rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.1rem;
+    color: #666;
+  }
+  .check-mark {
+    color: #00f0ff;
   }
   .loader-bar-bg {
     width: 200px;
@@ -437,7 +452,7 @@
     padding: 1.5rem 2rem;
     box-sizing: border-box;
     backdrop-filter: blur(12px);
-    background: rgba(5, 5, 8, 0.4);
+    background: rgba(5, 6, 9, 0.4);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
   .header-inner {
@@ -475,43 +490,25 @@
     cursor: pointer;
   }
 
-  /* Mobile Drawer */
-  .mobile-menu-drawer {
-    position: fixed;
-    inset: 0;
-    background: #050508;
-    z-index: 999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .mobile-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    text-align: center;
-  }
-  .mobile-nav a {
-    color: #fff;
-    text-decoration: none;
-    font-size: 1.5rem;
-    letter-spacing: 0.2rem;
-  }
-
-  /* Content Sections */
+  /* Content */
   .content-container {
     position: relative;
     z-index: 2;
   }
 
-  /* Hero */
+  /* Hero Section */
   .hero-section {
     height: 100vh;
     display: flex;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 0 1.5rem;
+    padding: 0 8vw;
+    box-sizing: border-box;
+  }
+  .hero-editorial-grid {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    width: 100%;
   }
   .eyebrow {
     font-size: 0.8rem;
@@ -521,52 +518,46 @@
     margin-bottom: 1rem;
   }
   .hero-title {
-    font-size: clamp(2.5rem, 8vw, 6rem);
+    font-size: clamp(3rem, 9vw, 7rem);
     font-weight: 200;
     letter-spacing: 0.4rem;
-    margin: 0 0 1.5rem 0;
+    line-height: 1.05;
+    margin: 0;
   }
-  .hero-desc {
-    max-width: 500px;
-    margin: 0 auto 3rem auto;
-    color: #a0a5b5;
-    font-size: 0.95rem;
-    line-height: 1.6;
-  }
-  .scroll-indicator {
+  .hero-meta {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.5rem;
   }
-  .scroll-text {
+  .meta-num {
+    font-size: 0.8rem;
+    letter-spacing: 0.2rem;
+    color: #00f0ff;
+  }
+  .meta-label {
     font-size: 0.65rem;
     letter-spacing: 0.2rem;
     color: #666;
   }
   .scroll-line {
     width: 1px;
-    height: 30px;
+    height: 40px;
     background: linear-gradient(to bottom, #00f0ff, transparent);
   }
 
-  /* Generic Section Wrappers */
+  /* Editorial Section Cards */
   .section-wrapper {
     height: 100vh;
     display: flex;
     align-items: center;
-    padding: 0 5vw;
+    padding: 0 8vw;
     box-sizing: border-box;
   }
-  .section-card {
-    max-width: 450px;
-    background: rgba(10, 12, 18, 0.65);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 2.5rem;
-    border-radius: 4px;
+  .editorial-card {
+    max-width: 420px;
   }
-  .section-card.right {
+  .editorial-card.right {
     margin-left: auto;
   }
   .badge {
@@ -576,20 +567,36 @@
     display: block;
     margin-bottom: 0.75rem;
   }
-  .section-card h2 {
-    font-size: 2rem;
+  .editorial-card h2 {
+    font-size: 2.2rem;
     font-weight: 300;
     letter-spacing: 0.15rem;
     margin: 0 0 1rem 0;
   }
-  .section-card p {
+  .editorial-card p {
     color: #a0a5b5;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     line-height: 1.6;
     margin: 0;
   }
 
-  /* Layers HUD */
+  .spec-callout {
+    margin-top: 2rem;
+    border-left: 2px solid #aa00ff;
+    padding-left: 1rem;
+  }
+  .callout-num {
+    font-size: 2.5rem;
+    font-weight: 200;
+    display: block;
+    color: #fff;
+  }
+  .callout-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2rem;
+    color: #888;
+  }
+
   .layers-hud {
     margin-top: 1.5rem;
     display: flex;
@@ -615,7 +622,7 @@
     align-items: center;
     justify-content: center;
     padding: 5rem 1.5rem;
-    background: rgba(5, 5, 8, 0.85);
+    background: rgba(5, 6, 9, 0.85);
   }
   .config-container {
     max-width: 700px;
@@ -678,7 +685,7 @@
   }
   .order-btn {
     background: #fff;
-    color: #050508;
+    color: #050609;
     border: none;
     padding: 1rem 2.5rem;
     font-size: 0.8rem;
@@ -746,7 +753,7 @@
   /* Specs */
   .specs-section {
     padding: 8rem 2rem;
-    background: rgba(5, 5, 8, 0.95);
+    background: rgba(5, 6, 9, 0.95);
   }
   .specs-grid {
     max-width: 1100px;
@@ -793,7 +800,15 @@
     .mobile-menu-btn {
       display: block;
     }
-    .section-card {
+    .hero-editorial-grid {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2rem;
+    }
+    .hero-meta {
+      align-items: flex-start;
+    }
+    .editorial-card {
       max-width: 100%;
     }
     .footer-inner {
