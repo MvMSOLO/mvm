@@ -141,7 +141,7 @@
 
     <button
       class="mobile-menu-btn"
-      onpointerdown={() => { isMobileMenuOpen = !isMobileMenuOpen; }}
+      onclick={() => { isMobileMenuOpen = !isMobileMenuOpen; }}
     >
       {isMobileMenuOpen ? '✕' : '☰'}
     </button>
@@ -259,7 +259,7 @@
             {#each ['NOVA ONE', 'NOVA ONE PRO'] as model}
               <button
                 class="text-control {selectedModel === model ? 'active' : ''}"
-                onpointerdown={() => (selectedModel = model)}
+                onclick={() => (selectedModel = model)}
               >
                 {model}
               </button>
@@ -274,7 +274,7 @@
             {#each ['Titanium', 'Obsidian', 'Silver'] as finish}
               <button
                 class="text-control {selectedFinish === finish ? 'active' : ''}"
-                onpointerdown={() => setFinish(finish)}
+                onclick={() => setFinish(finish)}
               >
                 {finish}
               </button>
@@ -289,7 +289,7 @@
             {#each ['256GB', '512GB', '1TB'] as storage}
               <button
                 class="text-control {selectedStorage === storage ? 'active' : ''}"
-                onpointerdown={() => (selectedStorage = storage)}
+                onclick={() => (selectedStorage = storage)}
               >
                 {storage}
               </button>
@@ -316,13 +316,13 @@
       <div class="gallery-nav">
         <button
           class="gallery-btn"
-          onpointerdown={() => (currentGalleryIndex = (currentGalleryIndex - 1 + galleryImages.length) % galleryImages.length)}
+          onclick={() => (currentGalleryIndex = (currentGalleryIndex - 1 + galleryImages.length) % galleryImages.length)}
         >
           ← PREV
         </button>
         <button
           class="gallery-btn"
-          onpointerdown={() => (currentGalleryIndex = (currentGalleryIndex + 1) % galleryImages.length)}
+          onclick={() => (currentGalleryIndex = (currentGalleryIndex + 1) % galleryImages.length)}
         >
           NEXT →
         </button>
@@ -356,7 +356,7 @@
     padding: 0;
     background-color: #050609;
     color: #ffffff;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     overflow-x: hidden;
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
@@ -402,14 +402,16 @@
     text-align: center;
   }
   .loader-logo {
-    font-size: 3rem;
-    letter-spacing: 0.5rem;
-    font-weight: 300;
+    font-family: 'Syne', sans-serif;
+    font-size: 3.5rem;
+    letter-spacing: 0.6rem;
+    font-weight: 700;
     margin: 0 0 0.5rem 0;
   }
   .loader-subtitle {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.75rem;
-    letter-spacing: 0.2rem;
+    letter-spacing: 0.25rem;
     color: #888;
     margin-bottom: 1.5rem;
   }
@@ -418,6 +420,7 @@
     justify-content: center;
     gap: 1rem;
     margin-bottom: 2rem;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.65rem;
     letter-spacing: 0.1rem;
     color: #666;
@@ -437,6 +440,7 @@
     transition: width 0.2s ease;
   }
   .loader-num {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.85rem;
     letter-spacing: 0.1rem;
     color: #888;
@@ -463,18 +467,20 @@
     margin: 0 auto;
   }
   .brand-logo {
-    font-size: 1.25rem;
-    font-weight: 600;
-    letter-spacing: 0.25rem;
+    font-family: 'Syne', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: 0.3rem;
   }
   .desktop-nav {
     display: flex;
     gap: 2rem;
   }
   .nav-item {
+    font-family: 'Space Grotesk', sans-serif;
     color: #888;
     text-decoration: none;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     letter-spacing: 0.15rem;
     transition: color 0.2s;
   }
@@ -501,7 +507,7 @@
     height: 100vh;
     display: flex;
     align-items: center;
-    padding: 0 8vw;
+    padding: 0 10vw 0 16vw;
     box-sizing: border-box;
   }
   .hero-editorial-grid {
@@ -511,6 +517,7 @@
     width: 100%;
   }
   .eyebrow {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.8rem;
     letter-spacing: 0.3rem;
     color: #00f0ff;
@@ -518,9 +525,10 @@
     margin-bottom: 1rem;
   }
   .hero-title {
-    font-size: clamp(3rem, 9vw, 7rem);
-    font-weight: 200;
-    letter-spacing: 0.4rem;
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(3rem, 8vw, 6.5rem);
+    font-weight: 800;
+    letter-spacing: 0.2rem;
     line-height: 1.05;
     margin: 0;
   }
@@ -531,11 +539,13 @@
     gap: 0.5rem;
   }
   .meta-num {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.8rem;
     letter-spacing: 0.2rem;
     color: #00f0ff;
   }
   .meta-label {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.65rem;
     letter-spacing: 0.2rem;
     color: #666;
@@ -551,7 +561,7 @@
     height: 100vh;
     display: flex;
     align-items: center;
-    padding: 0 8vw;
+    padding: 0 10vw 0 16vw;
     box-sizing: border-box;
   }
   .editorial-card {
@@ -561,6 +571,7 @@
     margin-left: auto;
   }
   .badge {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.65rem;
     letter-spacing: 0.2rem;
     color: #00f0ff;
@@ -568,9 +579,10 @@
     margin-bottom: 0.75rem;
   }
   .editorial-card h2 {
-    font-size: 2.2rem;
-    font-weight: 300;
-    letter-spacing: 0.15rem;
+    font-family: 'Syne', sans-serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: 0.1rem;
     margin: 0 0 1rem 0;
   }
   .editorial-card p {
@@ -586,12 +598,14 @@
     padding-left: 1rem;
   }
   .callout-num {
-    font-size: 2.5rem;
-    font-weight: 200;
+    font-family: 'Syne', sans-serif;
+    font-size: 2.8rem;
+    font-weight: 700;
     display: block;
     color: #fff;
   }
   .callout-label {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.65rem;
     letter-spacing: 0.2rem;
     color: #888;
@@ -606,6 +620,7 @@
     padding-top: 1rem;
   }
   .hud-item {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.75rem;
     letter-spacing: 0.1rem;
     color: #888;
@@ -637,6 +652,7 @@
   }
   .config-group .group-label {
     display: block;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.7rem;
     letter-spacing: 0.2rem;
     color: #666;
@@ -651,6 +667,7 @@
     background: none;
     border: none;
     color: #888;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.9rem;
     letter-spacing: 0.1rem;
     padding: 0.5rem 0;
@@ -679,6 +696,7 @@
     gap: 1.5rem;
   }
   .summary-specs {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.85rem;
     letter-spacing: 0.15rem;
     color: #a0a5b5;
@@ -688,6 +706,7 @@
     color: #050609;
     border: none;
     padding: 1rem 2.5rem;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.8rem;
     letter-spacing: 0.2rem;
     font-weight: 600;
@@ -712,6 +731,7 @@
     text-align: center;
   }
   .gallery-counter {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.8rem;
     letter-spacing: 0.2rem;
     color: #00f0ff;
@@ -725,9 +745,10 @@
     margin-bottom: 2rem;
   }
   .gallery-card h3 {
-    font-size: 1.5rem;
-    font-weight: 300;
-    letter-spacing: 0.15rem;
+    font-family: 'Syne', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1rem;
     margin: 0 0 1rem 0;
   }
   .gallery-card p {
@@ -744,6 +765,7 @@
     background: none;
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #fff;
+    font-family: 'Space Grotesk', sans-serif;
     padding: 0.75rem 1.5rem;
     font-size: 0.75rem;
     letter-spacing: 0.15rem;
@@ -765,12 +787,14 @@
   }
   .spec-val {
     display: block;
-    font-size: 3.5rem;
-    font-weight: 200;
-    letter-spacing: 0.1rem;
+    font-family: 'Syne', sans-serif;
+    font-size: 3.8rem;
+    font-weight: 700;
+    letter-spacing: 0.05rem;
     color: #fff;
   }
   .spec-lbl {
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.65rem;
     letter-spacing: 0.2rem;
     color: #666;
@@ -781,6 +805,7 @@
   .global-footer {
     padding: 3rem 2rem;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 0.7rem;
     letter-spacing: 0.15rem;
     color: #555;
@@ -793,6 +818,12 @@
   }
 
   /* Media Queries */
+  @media (max-width: 1024px) {
+    .hero-section, .section-wrapper {
+      padding-left: 5vw;
+    }
+  }
+
   @media (max-width: 768px) {
     .desktop-nav {
       display: none;
