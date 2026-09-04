@@ -1,0 +1,169 @@
+:root {
+	--bg: #050609;
+	--bg-soft: #0a0c11;
+	--fg: #ffffff;
+	--fg-dim: #8a8f99;
+	--fg-faint: #555b66;
+	--line: rgba(255, 255, 255, 0.08);
+	--accent: #00f0ff;
+
+	--font-display: 'Syne', 'Space Grotesk', system-ui, sans-serif;
+	--font-mono: 'Space Grotesk', ui-monospace, monospace;
+	--font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+	--gutter: clamp(1.25rem, 5vw, 6rem);
+	--shell: 1440px;
+	--radius: 2px;
+	--ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	background-color: var(--bg);
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	background-color: var(--bg);
+	color: var(--fg);
+	font-family: var(--font-body);
+	font-weight: 300;
+	overflow-x: hidden;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body.is-locked {
+	overflow: hidden;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-display);
+	font-weight: 700;
+	margin: 0;
+	text-wrap: balance;
+}
+
+p {
+	margin: 0;
+	text-wrap: pretty;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	cursor: pointer;
+}
+
+/* Visible keyboard focus everywhere. */
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+
+::selection {
+	background: var(--accent);
+	color: #000;
+}
+
+/* Screen-reader-only utility. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+.skip-link {
+	position: fixed;
+	top: 0.75rem;
+	left: 0.75rem;
+	z-index: 12000;
+	padding: 0.6rem 1rem;
+	background: var(--fg);
+	color: #000;
+	font-family: var(--font-mono);
+	font-size: 0.7rem;
+	letter-spacing: 0.12em;
+	border-radius: var(--radius);
+	transform: translateY(-200%);
+	transition: transform 0.2s var(--ease);
+}
+
+.skip-link:focus-visible {
+	transform: translateY(0);
+}
+
+/* Shared editorial primitives. */
+.eyebrow,
+.badge {
+	display: inline-block;
+	font-family: var(--font-mono);
+	font-size: 0.65rem;
+	font-weight: 500;
+	letter-spacing: 0.28em;
+	color: var(--accent);
+	text-transform: uppercase;
+}
+
+.mono {
+	font-family: var(--font-mono);
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+}
+
+/* Scroll reveal, applied by the `reveal` action. */
+.reveal {
+	opacity: 0;
+	transform: translateY(28px);
+	transition:
+		opacity 0.9s var(--ease),
+		transform 0.9s var(--ease);
+	will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+	opacity: 1;
+	transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+
+	.reveal {
+		opacity: 1;
+		transform: none;
+		transition: none;
+	}
+
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+}
