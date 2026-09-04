@@ -34,6 +34,16 @@ export class CinematicRig {
 		this.currentLookAt = new THREE.Vector3(0, 0, 0);
 		this.targetLookAt = new THREE.Vector3(0, 0, 0);
 
+		// Orbit state is kept in polar form (angles + distance) rather than as a
+		// world position. Damping a world position means a large scroll jump sends
+		// the camera on a straight line *through* the subject, which is what made
+		// the frame flash empty; damping the angles keeps it on the orbit sphere,
+		// so the subject stays framed the whole way.
+		this.currentYaw = 0;
+		this.currentPitch = 0.06;
+		this.currentDistance = 6;
+		this.hasOrbit = false;
+
 		this.currentFov = 45;
 		this.targetFov = 45;
 		this.rollAngle = 0;
@@ -188,8 +198,32 @@ export class CinematicRig {
 		this.targetPos.copy(this.targetLookAt).addScaledVector(dir, distance);
 
 		const factor = 1 - Math.exp(-6 * Math.max(deltaTime, 0.0001));
-		this.currentPos.lerp(this.targetPos, factor);
-		this.currentLookAt.lerp(this.targetLookAt, factor);
+
+		if (!this.hasOrbit) {
+			this.currentYaw = yaw;
+			this.currentPitch = pitch;
+			this.currentDistance = distance;
+			this.currentLookAt.copy(this.targetLookAt);
+			this.hasOrbit = true;
+		} else {
+			// Take the short way round so a yaw wrap never swings the long way.
+			const deltaYaw = Math.atan2(Math.sin(yaw - this.currentYaw), Math.cos(yaw - this.currentYaw));
+			this.currentYaw += deltaYaw * factor;
+			this.currentPitch += (pitch - this.currentPitch) * factor;
+			this.currentDistance += (distance - this.currentDistance) * factor;
+			this.currentLookAt.lerp(this.targetLookAt, factor);
+		}
+
+		// Never let the damped distance collapse inside the subject, whatever the
+		// scroll does.
+		this.currentDistance = Math.max(this.currentDistance, radius * 1.05);
+
+		const currentDir = new THREE.Vector3(
+			Math.sin(this.currentYaw) * Math.cos(this.currentPitch),
+			Math.sin(this.currentPitch),
+			Math.cos(this.currentYaw) * Math.cos(this.currentPitch)
+		);
+		this.currentPos.copy(this.currentLookAt).addScaledVector(currentDir, this.currentDistance);
 		this.currentFov += (this.targetFov - this.currentFov) * factor;
 		this.rollAngle += (this.targetRoll - this.rollAngle) * factor;
 

@@ -1,10 +1,22 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { CinematicRig } from './CinematicRig.js';
 import { ParticleSystem } from './ParticleSystem.js';
 import { LabelSystem } from './LabelSystem.js';
 import { setupEnvironmentAndMaterials, configurePhoneModel } from './modelPipeline.js';
+import {
+	PHONE,
+	createSlabGeometry,
+	createRailGeometry,
+	createChipLayout,
+	createLensLayout,
+	createContactShadow
+} from './partsFactory.js';
 import { directScene } from './scenes/sceneManager.js';
 import { LAYERS } from '$lib/data/product.js';
 
@@ -86,6 +98,16 @@ export class PhoneSceneEngine {
 
 		// Image-based lighting so titanium actually reads as metal.
 		this.envTarget = setupEnvironmentAndMaterials(this.scene, this.renderer);
+
+		// Bloom pass: the emissive display, the NPU die and the battery pulse now
+		// bleed light the way they would through a real camera. Disabled
+		// automatically if the device cannot keep up (see monitorPerformance).
+		this.composer = new EffectComposer(this.renderer);
+		this.composer.addPass(new RenderPass(this.scene, this.camera));
+		this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.75, 0.82);
+		this.bloomPass.enabled = !this.reducedMotion;
+		this.composer.addPass(this.bloomPass);
+		this.composer.addPass(new OutputPass());
 
 		this.particleSystem = new ParticleSystem(this.scene);
 		this.labelSystem = new LabelSystem(this.camera, container);
@@ -246,12 +268,11 @@ export class PhoneSceneEngine {
 	}
 
 	buildProceduralExplodedLayers() {
-		const width = 1.3;
-		const height = 2.7;
-		const thickness = 0.04;
+		const width = PHONE.width;
+		const height = PHONE.height;
 
-		// 01 — sapphire glass
-		const glassGeo = new THREE.PlaneGeometry(width, height);
+		// 01 — sapphire glass (rounded, with real thickness so the edge catches light)
+		const glassGeo = createSlabGeometry({ depth: 0.014 });
 		const glassMat = new THREE.MeshPhysicalMaterial({
 			color: 0xffffff,
 			metalness: 0,
@@ -305,12 +326,17 @@ export class PhoneSceneEngine {
       `,
 			transparent: true
 		});
-		const displayGeo = new THREE.PlaneGeometry(width * 0.95, height * 0.96);
+		const displayGeo = createSlabGeometry({
+			width: width * 0.95,
+			height: height * 0.96,
+			depth: 0.018,
+			radius: PHONE.corner * 0.88
+		});
 		this.layers.display.add(new THREE.Mesh(displayGeo, this.shaderMaterials.displayShader));
 		this.disposeLater(displayGeo, this.shaderMaterials.displayShader);
 
-		// 03 — titanium chassis
-		const frameGeo = new THREE.BoxGeometry(width, height, thickness);
+		// 03 — titanium chassis: a hollow rail, so the stack stays see-through
+		const frameGeo = createRailGeometry();
 		const frameMat = new THREE.MeshPhysicalMaterial({
 			color: 0x5a5d65,
 			metalness: 0.95,
@@ -321,7 +347,12 @@ export class PhoneSceneEngine {
 		this.disposeLater(frameGeo, frameMat);
 
 		// 04 — penta camera array (was previously an empty group)
-		const plateGeo = new THREE.BoxGeometry(width * 0.62, width * 0.62, 0.03);
+		const plateGeo = createSlabGeometry({
+			width: width * 0.62,
+			height: width * 0.62,
+			depth: 0.05,
+			radius: 0.16
+		});
 		const plateMat = new THREE.MeshPhysicalMaterial({
 			color: 0x24262b,
 			metalness: 0.85,
@@ -333,8 +364,10 @@ export class PhoneSceneEngine {
 		this.layers.camera.add(plate);
 		this.disposeLater(plateGeo, plateMat);
 
-		const barrelGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.06, 32);
-		const lensGeo = new THREE.SphereGeometry(0.105, 24, 16);
+		const barrelGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.08, 40);
+		const ringGeo = new THREE.TorusGeometry(0.135, 0.012, 12, 40);
+		const lensGeo = new THREE.SphereGeometry(0.105, 32, 20);
+		const tofGeo = new THREE.SphereGeometry(0.06, 24, 16);
 		const barrelMat = new THREE.MeshPhysicalMaterial({
 			color: 0x101215,
 			metalness: 0.9,
@@ -347,22 +380,32 @@ export class PhoneSceneEngine {
 			clearcoat: 1,
 			envMapIntensity: 2.2
 		});
-		this.disposeLater(barrelGeo, lensGeo, barrelMat, lensMat);
+		this.disposeLater(barrelGeo, ringGeo, lensGeo, tofGeo, barrelMat, lensMat);
 
-		const lensOffsets = [
-			[-0.17, 0.17],
-			[0.17, 0.17],
-			[-0.17, -0.17],
-			[0.17, -0.17],
-			[0, 0]
-		];
-		for (const [x, y] of lensOffsets) {
-			const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-			barrel.rotation.x = Math.PI / 2;
-			barrel.position.set(x, height * 0.28 + y, 0.04);
-			const lens = new THREE.Mesh(lensGeo, lensMat);
-			lens.position.set(x, height * 0.28 + y, 0.06);
-			this.layers.camera.add(barrel, lens);
+		// Penta array: four full barrels plus a smaller time-of-flight sensor.
+		for (const lensSpec of createLensLayout()) {
+			const y = height * 0.28 + lensSpec.y;
+			const small = lensSpec.name === 'tof';
+
+			if (!small) {
+				const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+				barrel.rotation.x = Math.PI / 2;
+				barrel.position.set(lensSpec.x, y, 0.045);
+
+				const ring = new THREE.Mesh(ringGeo, barrelMat);
+				ring.position.set(lensSpec.x, y, 0.075);
+
+				const lens = new THREE.Mesh(lensGeo, lensMat);
+				lens.position.set(lensSpec.x, y, 0.07);
+				lens.scale.z = 0.55;
+
+				this.layers.camera.add(barrel, ring, lens);
+			} else {
+				const sensor = new THREE.Mesh(tofGeo, lensMat);
+				sensor.position.set(lensSpec.x, y, 0.055);
+				sensor.scale.z = 0.5;
+				this.layers.camera.add(sensor);
+			}
 		}
 
 		// 05 — NPU logic board (animated traces)
@@ -403,12 +446,54 @@ export class PhoneSceneEngine {
       `,
 			transparent: true
 		});
-		const boardGeo = new THREE.PlaneGeometry(width * 0.9, height * 0.45);
+		const boardWidth = width * 0.9;
+		const boardHeight = height * 0.45;
+		const boardGeo = createSlabGeometry({
+			width: boardWidth,
+			height: boardHeight,
+			depth: 0.016,
+			radius: 0.05
+		});
 		this.layers.board.add(new THREE.Mesh(boardGeo, this.shaderMaterials.boardShader));
 		this.disposeLater(boardGeo, this.shaderMaterials.boardShader);
 
+		// Real silicon on the board: the NPU die plus its supporting packages.
+		const chipMat = new THREE.MeshPhysicalMaterial({
+			color: 0x14161b,
+			metalness: 0.65,
+			roughness: 0.45,
+			envMapIntensity: 1.1
+		});
+		this.npuMat = new THREE.MeshPhysicalMaterial({
+			color: 0x1a1d24,
+			metalness: 0.8,
+			roughness: 0.3,
+			emissive: new THREE.Color(0x0088ff),
+			emissiveIntensity: 0.35,
+			envMapIntensity: 1.4
+		});
+		this.disposeLater(chipMat, this.npuMat);
+
+		for (const chip of createChipLayout()) {
+			const geometry = createSlabGeometry({
+				width: boardWidth * chip.width,
+				height: boardHeight * chip.height,
+				depth: chip.depth,
+				radius: 0.012
+			});
+			const mesh = new THREE.Mesh(geometry, chip.emissive ? this.npuMat : chipMat);
+			mesh.position.set(boardWidth * chip.x, boardHeight * chip.y, 0.012 + chip.depth / 2);
+			this.layers.board.add(mesh);
+			this.disposeLater(geometry);
+		}
+
 		// 06 — battery cell
-		const cellGeo = new THREE.BoxGeometry(width * 0.85, height * 0.45, 0.03);
+		const cellGeo = createSlabGeometry({
+			width: width * 0.85,
+			height: height * 0.45,
+			depth: 0.06,
+			radius: 0.06
+		});
 		const cellMat = new THREE.MeshPhysicalMaterial({
 			color: 0x2f3138,
 			metalness: 0.7,
@@ -425,9 +510,34 @@ export class PhoneSceneEngine {
 		});
 		const glowGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.4);
 		const glow = new THREE.Mesh(glowGeo, this.batteryGlowMat);
-		glow.position.z = 0.03;
+		glow.position.z = 0.04;
 		this.layers.battery.add(glow);
 		this.disposeLater(glowGeo, this.batteryGlowMat);
+
+		// Soft contact shadow under the whole device: grounds the object so it no
+		// longer looks like it is floating in a void.
+		const shadow = createContactShadow(width * 1.7);
+		shadow.mesh.position.y = -height * 0.62;
+		this.contactShadow = shadow.mesh;
+		this.mainGroup.add(shadow.mesh);
+		this.disposeLater(shadow.geometry, shadow.material);
+
+		// Assembled reference body lying flat beneath the exploded stack, so the
+		// parts always read as belonging to one device.
+		const ghostGeo = createSlabGeometry({ depth: PHONE.depth });
+		const ghostMat = new THREE.MeshPhysicalMaterial({
+			color: 0x1b1e24,
+			metalness: 0.9,
+			roughness: 0.42,
+			envMapIntensity: 0.9
+		});
+		const ghost = new THREE.Mesh(ghostGeo, ghostMat);
+		ghost.rotation.x = -Math.PI / 2;
+		ghost.position.y = -height * 0.6;
+		ghost.visible = false;
+		this.ghostPhone = ghost;
+		this.mainGroup.add(ghost);
+		this.disposeLater(ghostGeo, ghostMat);
 
 		this.explodedGroup.visible = false;
 	}
@@ -490,6 +600,8 @@ export class PhoneSceneEngine {
 		this.camera.aspect = width / height;
 		this.camera.updateProjectionMatrix();
 		this.renderer.setSize(width, height);
+		this.composer?.setSize(width, height);
+		this.bloomPass?.setSize(width, height);
 	}
 
 	/**
@@ -545,6 +657,10 @@ export class PhoneSceneEngine {
 		if (average < 40 && this.pixelRatio > 1) {
 			this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
 			this.renderer.setPixelRatio(this.pixelRatio);
+		} else if (average < 32 && this.bloomPass?.enabled) {
+			// Resolution is already at the floor: drop the most expensive effect
+			// rather than keep stuttering.
+			this.bloomPass.enabled = false;
 		} else if (average > 58 && this.pixelRatio < this.basePixelRatio) {
 			this.pixelRatio = Math.min(this.basePixelRatio, this.pixelRatio + 0.25);
 			this.renderer.setPixelRatio(this.pixelRatio);
@@ -606,8 +722,13 @@ export class PhoneSceneEngine {
 		this.updateHotspots();
 		this.options.onHotspots?.(this.hotspots);
 
+		// The lying-flat reference body only makes sense while the stack is apart.
+		if (this.ghostPhone) this.ghostPhone.visible = this.explodedGroup.visible;
+		if (this.contactShadow) this.contactShadow.visible = this.explodedGroup.visible;
+
 		this.monitorPerformance(delta);
-		this.renderer.render(this.scene, this.camera);
+		if (this.bloomPass?.enabled) this.composer.render(delta);
+		else this.renderer.render(this.scene, this.camera);
 	}
 
 	destroy() {
@@ -624,6 +745,8 @@ export class PhoneSceneEngine {
 		this.disposables = [];
 		this.particleSystem.dispose();
 		this.envTarget?.dispose();
+		this.bloomPass?.dispose?.();
+		this.composer?.dispose?.();
 
 		this.scene.traverse((child) => {
 			const mesh = /** @type {THREE.Mesh} */ (child);

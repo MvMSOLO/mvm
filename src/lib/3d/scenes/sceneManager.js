@@ -15,6 +15,21 @@ const STACK = {
 	battery: -2.5
 };
 
+/**
+ * Lateral fan applied on top of the depth stack, in the same gap units. Pure
+ * depth separation collapses into one silhouette when viewed head-on; a small
+ * x/y drift keeps every part legible and readable as one machined device.
+ * All values collapse to zero with the gap, so the stack still closes exactly.
+ */
+const FAN = {
+	glass: { x: 0.0, y: 0.34 },
+	display: { x: -0.14, y: 0.2 },
+	frame: { x: 0.05, y: 0.02 },
+	camera: { x: 0.28, y: -0.1 },
+	board: { x: -0.1, y: -0.24 },
+	battery: { x: 0.12, y: -0.4 }
+};
+
 /** @param {number} current @param {number} target @param {number} t */
 function approach(current, target, t) {
 	return THREE.MathUtils.lerp(current, target, t);
@@ -40,6 +55,9 @@ function layoutStack(engine, gap, focus = {}) {
 		const layer = engine.layers[key];
 		if (!layer) continue;
 		layer.position.z = key === focus.hero ? heroZ : gap * multiplier;
+		const fan = FAN[/** @type {keyof typeof FAN} */ (key)];
+		layer.position.x = gap * (fan?.x ?? 0);
+		layer.position.y = gap * (fan?.y ?? 0);
 	}
 }
 
