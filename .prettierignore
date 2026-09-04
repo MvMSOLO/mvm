@@ -6,3 +6,6 @@ package-lock.json
 static
 *.glb
 *.hdr
+e2e-results
+playwright-report
+test-results

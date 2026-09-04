@@ -19,7 +19,7 @@ export function reveal(node, params = {}) {
 		return {};
 	}
 
-	if (delay) node.style.transitionDelay = `${delay}ms`;
+	if (delay) node.style.setProperty('--reveal-delay', `${delay}ms`);
 
 	const observer = new IntersectionObserver(
 		(entries) => {

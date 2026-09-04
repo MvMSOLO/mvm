@@ -64,6 +64,11 @@ export class PhoneSceneEngine {
 		this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
 		this.rig = new CinematicRig(this.camera);
 
+		// Scratch objects for the per-frame subject measurement (no allocations
+		// inside the render loop).
+		this.subjectBox = new THREE.Box3();
+		this.subjectSphere = new THREE.Sphere();
+
 		this.renderer = new THREE.WebGLRenderer({
 			powerPreference: 'high-performance',
 			antialias: true,
@@ -117,7 +122,19 @@ export class PhoneSceneEngine {
 		this.loadBaseModel();
 		this.bindEvents();
 
-		this.clock = new THREE.Clock();
+		// THREE.Clock is deprecated in favour of THREE.Timer. The wrapper keeps the
+		// `getDelta()` / `getElapsedTime()` shape the scene directors already use.
+		const timer = new THREE.Timer();
+		this.timer = timer;
+		this.clock = {
+			getDelta() {
+				timer.update();
+				return timer.getDelta();
+			},
+			getElapsedTime() {
+				return timer.getElapsed();
+			}
+		};
 		/** @type {number[]} */
 		this.fpsSamples = [];
 		this.animate = this.animate.bind(this);
@@ -534,6 +551,24 @@ export class PhoneSceneEngine {
 		}
 	}
 
+	/**
+	 * Measure the world bounding sphere of whatever is currently on screen and
+	 * hand it to the rig, which derives the camera distance from it. This is the
+	 * link that keeps the framing correct for the assembled model *and* for the
+	 * much deeper exploded stack.
+	 */
+	measureSubject() {
+		const subject = this.explodedGroup.visible ? this.explodedGroup : this.basePhoneGroup;
+		if (!subject.visible || subject.children.length === 0) return;
+
+		subject.updateWorldMatrix(true, true);
+		this.subjectBox.setFromObject(subject);
+		if (this.subjectBox.isEmpty()) return;
+
+		this.subjectBox.getBoundingSphere(this.subjectSphere);
+		this.rig.setSubject(this.subjectSphere.center, this.subjectSphere.radius);
+	}
+
 	animate() {
 		if (this.disposed) return;
 		this.reqId = requestAnimationFrame(this.animate);
@@ -545,6 +580,7 @@ export class PhoneSceneEngine {
 
 		this.accentColor.setHex(this.accentColorHex);
 
+		this.measureSubject();
 		this.rig.update(this.scrollProgress, delta, this.reducedMotion ? 0 : elapsed);
 		this.particleSystem.update(elapsed, this.accentColorHex, this.reducedMotion);
 

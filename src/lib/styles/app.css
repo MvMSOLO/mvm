@@ -1,3 +1,15 @@
+/* Metric-matched fallback: while the woff2 subsets load, text is laid out with
+   the local system font scaled to Inter's metrics, so swapping in the real face
+   causes no visible reflow (CLS ~0). */
+@font-face {
+	font-family: 'Inter Fallback';
+	src: local('Arial'), local('Helvetica'), local('Liberation Sans');
+	size-adjust: 107%;
+	ascent-override: 90%;
+	descent-override: 22.5%;
+	line-gap-override: 0%;
+}
+
 :root {
 	--bg: #050609;
 	--bg-soft: #0a0c11;
@@ -9,12 +21,23 @@
 
 	--font-display: 'Syne', 'Space Grotesk', system-ui, sans-serif;
 	--font-mono: 'Space Grotesk', ui-monospace, monospace;
-	--font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-body:
+		'Inter Variable', 'Inter', 'Inter Fallback', -apple-system, BlinkMacSystemFont, sans-serif;
+
+	/* Fluid type scale: one ratio, so every size stays in proportion at any
+	   viewport instead of each component inventing its own clamp(). */
+	--step--1: clamp(0.72rem, 0.7rem + 0.1vw, 0.78rem);
+	--step-0: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+	--step-1: clamp(1.2rem, 1.1rem + 0.5vw, 1.5rem);
+	--step-2: clamp(1.6rem, 1.35rem + 1.2vw, 2.4rem);
+	--step-3: clamp(2.2rem, 1.6rem + 3vw, 4rem);
+	--step-4: clamp(3rem, 1.6rem + 7vw, 8rem);
 
 	--gutter: clamp(1.25rem, 5vw, 6rem);
 	--shell: 1440px;
 	--radius: 2px;
 	--ease: cubic-bezier(0.16, 1, 0.3, 1);
+	--ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 *,
@@ -35,6 +58,14 @@ body {
 	color: var(--fg);
 	font-family: var(--font-body);
 	font-weight: 300;
+	font-size: var(--step-0);
+	line-height: 1.6;
+	/* Contextual alternates + kerning on; disable the slashed-zero look for prose. */
+	font-feature-settings:
+		'kern' 1,
+		'liga' 1,
+		'calt' 1;
+	font-optical-sizing: auto;
 	overflow-x: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
@@ -50,6 +81,8 @@ h3 {
 	font-family: var(--font-display);
 	font-weight: 700;
 	margin: 0;
+	line-height: 0.95;
+	letter-spacing: -0.02em;
 	text-wrap: balance;
 }
 
@@ -131,21 +164,38 @@ button {
 	font-family: var(--font-mono);
 	letter-spacing: 0.2em;
 	text-transform: uppercase;
+	/* Tabular figures so live counters and spec numbers stop jittering. */
+	font-variant-numeric: tabular-nums;
+	font-feature-settings:
+		'tnum' 1,
+		'zero' 1;
+}
+
+/* Big numeric readouts (capacity, percentages, chapter indices). */
+.numeric {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings:
+		'tnum' 1,
+		'zero' 1;
 }
 
 /* Scroll reveal, applied by the `reveal` action. */
 .reveal {
 	opacity: 0;
 	transform: translateY(28px);
+	filter: blur(6px);
 	transition:
-		opacity 0.9s var(--ease),
-		transform 0.9s var(--ease);
-	will-change: opacity, transform;
+		opacity 0.9s var(--ease) var(--reveal-delay, 0ms),
+		transform 0.9s var(--ease) var(--reveal-delay, 0ms),
+		filter 0.7s var(--ease-out-quart) var(--reveal-delay, 0ms);
+	will-change: opacity, transform, filter;
 }
 
 .reveal.is-visible {
 	opacity: 1;
 	transform: none;
+	filter: none;
+	will-change: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -156,6 +206,7 @@ button {
 	.reveal {
 		opacity: 1;
 		transform: none;
+		filter: none;
 		transition: none;
 	}
 

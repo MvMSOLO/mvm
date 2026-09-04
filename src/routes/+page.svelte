@@ -142,7 +142,7 @@
 <ProgressRail {progress} activeId={activeChapter.id} onJump={jumpTo} />
 
 <main id="main">
-	<div class="cinematic" bind:this={cinematicRegion}>
+	<div class="cinematic" data-cinematic bind:this={cinematicRegion}>
 		{#each CHAPTERS as chapter, index (chapter.id)}
 			<section
 				id={chapter.id}

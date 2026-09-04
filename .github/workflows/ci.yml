@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -18,5 +22,36 @@ jobs:
 
       - run: npm ci
 
-      # lint -> svelte-check -> unit tests -> static build
+      # prettier + eslint -> svelte-check -> unit tests -> static build
       - run: npm run verify
+
+      - name: Report bundle size
+        run: du -sh build && du -ah build | sort -rh | head -20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build
+          retention-days: 7
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

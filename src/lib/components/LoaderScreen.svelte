@@ -13,7 +13,7 @@
 	);
 </script>
 
-<div class="loader" role="status" aria-live="polite">
+<div class="loader" data-loader role="status" aria-live="polite">
 	<div class="content">
 		<h1>NOVA</h1>
 		<p class="sub mono">{failed ? 'RUNNING IN FALLBACK MODE' : 'BUILDING EXPERIENCE'}</p>
