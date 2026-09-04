@@ -8,6 +8,10 @@ import {
 	createChipLayout,
 	createLensLayout,
 	createContactShadow,
+	createGrilleLayout,
+	createScrewLayout,
+	createAntennaLines,
+	createFlexCableGeometry,
 	normaliseUv
 } from './partsFactory.js';
 
@@ -148,6 +152,66 @@ describe('createContactShadow', () => {
 		expect(material.transparent).toBe(true);
 		expect(material.depthWrite).toBe(false);
 		expect(mesh.renderOrder).toBeLessThan(0);
+	});
+});
+
+describe('machined detail layouts', () => {
+	it('spaces the grille holes evenly and keeps them on the phone', () => {
+		const holes = createGrilleLayout({ count: 14 });
+		expect(holes).toHaveLength(14);
+
+		const gaps = holes.slice(1).map((hole, i) => hole.x - holes[i].x);
+		for (const gap of gaps) expect(gap).toBeCloseTo(gaps[0], 6);
+		for (const hole of holes) {
+			expect(Math.abs(hole.x)).toBeLessThan(PHONE.width / 2);
+			expect(hole.radius).toBeGreaterThan(0);
+		}
+	});
+
+	it('handles the degenerate single-hole case', () => {
+		const holes = createGrilleLayout({ count: 1 });
+		expect(holes).toHaveLength(1);
+		expect(Number.isFinite(holes[0].x)).toBe(true);
+	});
+
+	it('puts six screws inside the rail, symmetric left/right', () => {
+		const screws = createScrewLayout();
+		expect(screws).toHaveLength(6);
+		for (const screw of screws) {
+			expect(Math.abs(screw.x)).toBeLessThan(PHONE.width / 2);
+			expect(Math.abs(screw.y)).toBeLessThan(PHONE.height / 2);
+		}
+		const xs = screws.map((s) => s.x);
+		expect(xs.filter((x) => x > 0)).toHaveLength(3);
+		expect(xs.filter((x) => x < 0)).toHaveLength(3);
+	});
+
+	it('keeps the antenna lines within the rail height', () => {
+		for (const line of createAntennaLines()) {
+			expect(Math.abs(line)).toBeLessThan(0.5);
+		}
+	});
+});
+
+describe('createFlexCableGeometry', () => {
+	it('spans from start to end and bows sideways', () => {
+		const geometry = createFlexCableGeometry({
+			from: [0, -0.5, 0],
+			to: [0, 0.5, 0],
+			bulge: 0.3,
+			radius: 0.01
+		});
+		geometry.computeBoundingBox();
+		const box = geometry.boundingBox;
+		expect(box?.min.y).toBeLessThan(-0.4);
+		expect(box?.max.y).toBeGreaterThan(0.4);
+		// The bow means the tube reaches out past the straight line.
+		expect(box?.max.x ?? 0).toBeGreaterThan(0.2);
+	});
+
+	it('never produces a zero-radius or zero-segment tube', () => {
+		const geometry = createFlexCableGeometry({ radius: 0, segments: 0 });
+		expect(geometry.getAttribute('position').count).toBeGreaterThan(0);
 	});
 });
 

@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
+import { createPostChain } from './postFx.js';
+import { detectTier, collectSignals, adaptTier, budgetFor } from './qualityTier.js';
 import { CinematicRig } from './CinematicRig.js';
 import { ParticleSystem } from './ParticleSystem.js';
 import { LabelSystem } from './LabelSystem.js';
@@ -15,12 +14,50 @@ import {
 	createRailGeometry,
 	createChipLayout,
 	createLensLayout,
-	createContactShadow
+	createContactShadow,
+	createGrilleLayout,
+	createScrewLayout,
+	createAntennaLines,
+	createFlexCableGeometry
 } from './partsFactory.js';
 import { directScene } from './scenes/sceneManager.js';
+import {
+	SPRINGS,
+	createSpring,
+	createVectorSpring,
+	stepSpring,
+	stepVectorSpring
+} from './spring.js';
 import { LAYERS } from '$lib/data/product.js';
 
 const BG = 0x050609;
+
+/** Which spring preset each layer moves with: this is the parts list's "mass". */
+/** @type {Record<string, import('./spring.js').SpringConfig>} */
+const LAYER_SPRING = {
+	glass: SPRINGS.light,
+	display: SPRINGS.light,
+	frame: SPRINGS.solid,
+	camera: SPRINGS.solid,
+	board: SPRINGS.solid,
+	battery: SPRINGS.heavy
+};
+
+/**
+ * `?quality=low|mid|high` forces a tier. Used by QA and by the screenshot
+ * harness, which runs on a software rasteriser and would otherwise always be
+ * classified as low-end.
+ * @returns {import('./qualityTier.js').Tier | null}
+ */
+function readQualityOverride() {
+	if (typeof window === 'undefined') return null;
+	try {
+		const value = new URLSearchParams(window.location.search).get('quality');
+		return value === 'low' || value === 'mid' || value === 'high' ? value : null;
+	} catch {
+		return null;
+	}
+}
 
 /**
  * @typedef {object} Hotspot
@@ -37,6 +74,7 @@ const BG = 0x050609;
  * @property {(progress: number) => void} [onProgress]
  * @property {(items: Hotspot[]) => void} [onHotspots]
  * @property {(error: unknown) => void} [onError]
+ * @property {(budget: import('./qualityTier.js').TierBudget) => void} [onTier]
  * @property {boolean} [reducedMotion]
  */
 
@@ -87,7 +125,19 @@ export class PhoneSceneEngine {
 			alpha: false
 		});
 		this.renderer.setSize(width, height);
-		this.basePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+		// Decide the budget BEFORE building anything: a mid-range phone should never
+		// be asked to composite a bloom chain at 3x pixel ratio and only get rescued
+		// afterwards by dropping resolution.
+		this.budget = detectTier({
+			...collectSignals(this.renderer.getContext()),
+			reducedMotion: this.reducedMotion
+		});
+		const override = readQualityOverride();
+		if (override) this.budget = budgetFor(override);
+		this.options.onTier?.(this.budget);
+
+		this.basePixelRatio = Math.min(window.devicePixelRatio || 1, this.budget.pixelRatio);
 		this.pixelRatio = this.basePixelRatio;
 		this.renderer.setPixelRatio(this.pixelRatio);
 		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -99,18 +149,19 @@ export class PhoneSceneEngine {
 		// Image-based lighting so titanium actually reads as metal.
 		this.envTarget = setupEnvironmentAndMaterials(this.scene, this.renderer);
 
-		// Bloom pass: the emissive display, the NPU die and the battery pulse now
-		// bleed light the way they would through a real camera. Disabled
-		// automatically if the device cannot keep up (see monitorPerformance).
-		this.composer = new EffectComposer(this.renderer);
-		this.composer.addPass(new RenderPass(this.scene, this.camera));
-		this.bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.75, 0.82);
-		this.bloomPass.enabled = !this.reducedMotion;
-		this.composer.addPass(this.bloomPass);
-		this.composer.addPass(new OutputPass());
+		// Post-processing is code-split: on the low tier the composer, the bloom
+		// pass and the grade shader are never even downloaded.
+		/** @type {import('./postFx.js').PostChain | null} */
+		this.post = null;
+		if (this.budget.postFx) this.initPostProcessing(width, height);
 
-		this.particleSystem = new ParticleSystem(this.scene);
+		this.particleSystem = new ParticleSystem(this.scene, Math.round(320 * this.budget.particles));
 		this.labelSystem = new LabelSystem(this.camera, container);
+
+		/** @type {THREE.RectAreaLight[]} */
+		this.softboxes = [];
+		this.averageFps = 0;
+		this.frameAccumulator = 0;
 
 		this.mainGroup = new THREE.Group();
 		this.scene.add(this.mainGroup);
@@ -125,6 +176,19 @@ export class PhoneSceneEngine {
 			this.layers[layer.key] = new THREE.Group();
 			this.explodedGroup.add(this.layers[layer.key]);
 		}
+
+		// Per-part spring rig. Glass is light and snaps into place with a hint of
+		// overshoot; the battery is the heaviest thing in the device and lands last.
+		// Reduced motion keeps the targets but skips the physics entirely.
+		/** @type {Record<string, ReturnType<typeof createVectorSpring>> | null} */
+		this.springs = this.reducedMotion ? null : {};
+		if (this.springs) {
+			for (const layer of LAYERS) this.springs[layer.key] = createVectorSpring();
+		}
+		this.yawSpring = createSpring(0);
+		/** @type {Record<string, { x: number, y: number, z: number }>} */
+		this.layerTargets = {};
+		this.groupYawTarget = 0;
 
 		this.accentColorHex = 0xffffff;
 		this.accentColor = new THREE.Color(0xffffff);
@@ -164,12 +228,41 @@ export class PhoneSceneEngine {
 	}
 
 	/**
+	 * Build the post-processing chain asynchronously. The scene renders with the
+	 * plain renderer until it resolves, so nothing is ever blocked on it.
+	 * @param {number} width
+	 * @param {number} height
+	 */
+	initPostProcessing(width, height) {
+		createPostChain({
+			renderer: this.renderer,
+			scene: this.scene,
+			camera: this.camera,
+			width,
+			height,
+			budget: { bloom: this.budget.bloom, grade: this.budget.grade }
+		})
+			.then((chain) => {
+				if (this.disposed) {
+					chain.dispose();
+					return;
+				}
+				this.post = chain;
+				this.onWindowResize();
+			})
+			.catch((error) => {
+				// A failed effects download must never take the product page with it.
+				this.options.onError?.(error);
+			});
+	}
+
+	/**
 	 * Three-point studio lighting plus an accent rim light.
 	 * Returning the lights (instead of assigning to `this` here) keeps the
 	 * fields definitely-assigned for the type checker.
 	 */
 	initLights() {
-		this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+		this.scene.add(new THREE.AmbientLight(0xffffff, 0.45));
 
 		const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
 		keyLight.position.set(3, 5, 4);
@@ -185,6 +278,29 @@ export class PhoneSceneEngine {
 		rimLight.position.set(0, 0, 2.4);
 
 		this.scene.add(keyLight, fillLight, backLight, rimLight);
+
+		// Real softboxes. A directional light produces a point highlight on metal;
+		// an area light produces the long soft streak you see in every studio
+		// product photo, which is most of what makes titanium look like titanium.
+		// Mid and high tier only: rect area lights cost a BRDF LUT upload.
+		if (this.budget.tier !== 'low') {
+			RectAreaLightUniformsLib.init();
+
+			const softboxLeft = new THREE.RectAreaLight(0xffffff, 3.2, 1.2, 4.2);
+			softboxLeft.position.set(-2.6, 0.6, 2.4);
+			softboxLeft.lookAt(0, 0, 0);
+
+			const softboxRight = new THREE.RectAreaLight(0xdfe9ff, 2.2, 0.8, 3.6);
+			softboxRight.position.set(2.8, -0.2, 1.8);
+			softboxRight.lookAt(0, 0, 0);
+
+			const softboxTop = new THREE.RectAreaLight(0xffffff, 1.8, 3.2, 0.9);
+			softboxTop.position.set(0, 2.8, 1.2);
+			softboxTop.lookAt(0, 0, 0);
+
+			this.scene.add(softboxLeft, softboxRight, softboxTop);
+			this.softboxes = [softboxLeft, softboxRight, softboxTop];
+		}
 
 		return { keyLight, fillLight, backLight, rimLight };
 	}
@@ -270,17 +386,24 @@ export class PhoneSceneEngine {
 	buildProceduralExplodedLayers() {
 		const width = PHONE.width;
 		const height = PHONE.height;
+		const env = this.budget.envIntensity;
 
 		// 01 — sapphire glass (rounded, with real thickness so the edge catches light)
 		const glassGeo = createSlabGeometry({ depth: 0.014 });
 		const glassMat = new THREE.MeshPhysicalMaterial({
 			color: 0xffffff,
 			metalness: 0,
-			roughness: 0.05,
+			roughness: 0.04,
+			// Real glass: refractive index and thickness, plus an oleophobic clearcoat.
+			ior: 1.52,
 			transmission: 0.92,
 			thickness: 0.4,
+			clearcoat: 1,
+			clearcoatRoughness: 0.06,
+			specularIntensity: 1,
 			transparent: true,
 			opacity: 0.4,
+			envMapIntensity: 1.6 * env,
 			side: THREE.DoubleSide
 		});
 		this.layers.glass.add(new THREE.Mesh(glassGeo, glassMat));
@@ -340,11 +463,17 @@ export class PhoneSceneEngine {
 		const frameMat = new THREE.MeshPhysicalMaterial({
 			color: 0x5a5d65,
 			metalness: 0.95,
-			roughness: 0.25,
-			envMapIntensity: 1.8
+			roughness: 0.22,
+			// Brushed titanium is anisotropic: the highlight stretches along the
+			// machining direction instead of staying a round dot. This single
+			// property is most of the difference between "metal" and "grey plastic".
+			anisotropy: 0.65,
+			anisotropyRotation: Math.PI / 2,
+			envMapIntensity: 1.8 * env
 		});
 		this.layers.frame.add(new THREE.Mesh(frameGeo, frameMat));
 		this.disposeLater(frameGeo, frameMat);
+		this.buildRailDetails(frameMat, env);
 
 		// 04 — penta camera array (was previously an empty group)
 		const plateGeo = createSlabGeometry({
@@ -376,9 +505,15 @@ export class PhoneSceneEngine {
 		const lensMat = new THREE.MeshPhysicalMaterial({
 			color: 0x0a1a24,
 			metalness: 0.4,
-			roughness: 0.05,
+			roughness: 0.04,
 			clearcoat: 1,
-			envMapIntensity: 2.2
+			clearcoatRoughness: 0.02,
+			// Anti-reflective coating: a thin film, so the lens picks up the blue/violet
+			// shift you see on every real camera module at a glancing angle.
+			iridescence: 0.55,
+			iridescenceIOR: 1.9,
+			iridescenceThicknessRange: [180, 520],
+			envMapIntensity: 2.2 * env
 		});
 		this.disposeLater(barrelGeo, ringGeo, lensGeo, tofGeo, barrelMat, lensMat);
 
@@ -487,6 +622,25 @@ export class PhoneSceneEngine {
 			this.disposeLater(geometry);
 		}
 
+		// Flex cable: the board never floats free, it stays tethered to the display
+		// stack. Rebuilt each frame would be wasteful, so it is one static tube that
+		// is scaled/rotated by the director as the gap changes.
+		const cableGeo = createFlexCableGeometry({
+			from: [0, boardHeight * 0.5, 0.01],
+			to: [0, boardHeight * 0.5 + 0.5, 0.01],
+			bulge: 0.22,
+			radius: 0.014
+		});
+		const cableMat = new THREE.MeshStandardMaterial({
+			color: 0xd6a54a,
+			metalness: 0.55,
+			roughness: 0.55
+		});
+		const cable = new THREE.Mesh(cableGeo, cableMat);
+		this.flexCable = cable;
+		this.layers.board.add(cable);
+		this.disposeLater(cableGeo, cableMat);
+
 		// 06 — battery cell
 		const cellGeo = createSlabGeometry({
 			width: width * 0.85,
@@ -540,6 +694,73 @@ export class PhoneSceneEngine {
 		this.disposeLater(ghostGeo, ghostMat);
 
 		this.explodedGroup.visible = false;
+	}
+
+	/**
+	 * Machined detail on the titanium rail: speaker grille, chassis screws and
+	 * antenna break lines. All three are `InstancedMesh`es, so 14 grille holes and
+	 * 6 screws cost one draw call each instead of twenty.
+	 *
+	 * @param {THREE.MeshPhysicalMaterial} railMat
+	 * @param {number} env
+	 */
+	buildRailDetails(railMat, env) {
+		const matrix = new THREE.Matrix4();
+
+		// Speaker grille: real drilled holes along the bottom edge.
+		const holes = createGrilleLayout();
+		const holeGeo = new THREE.CylinderGeometry(holes[0].radius, holes[0].radius, PHONE.depth, 10);
+		const holeMat = new THREE.MeshStandardMaterial({
+			color: 0x05060a,
+			metalness: 0.3,
+			roughness: 0.9
+		});
+		const grille = new THREE.InstancedMesh(holeGeo, holeMat, holes.length);
+		holes.forEach((hole, index) => {
+			matrix.makeRotationX(Math.PI / 2);
+			matrix.setPosition(hole.x, hole.y, 0);
+			grille.setMatrixAt(index, matrix);
+		});
+		grille.instanceMatrix.needsUpdate = true;
+		this.layers.frame.add(grille);
+		this.disposeLater(holeGeo, holeMat);
+
+		// Chassis screws.
+		const screws = createScrewLayout();
+		const screwGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.02, 12);
+		const screwMat = new THREE.MeshPhysicalMaterial({
+			color: 0x8d9099,
+			metalness: 1,
+			roughness: 0.28,
+			envMapIntensity: 2 * env
+		});
+		const screwMesh = new THREE.InstancedMesh(screwGeo, screwMat, screws.length);
+		screws.forEach((screw, index) => {
+			matrix.makeRotationX(Math.PI / 2);
+			matrix.setPosition(screw.x, screw.y, PHONE.depth * 0.45);
+			screwMesh.setMatrixAt(index, matrix);
+		});
+		screwMesh.instanceMatrix.needsUpdate = true;
+		this.layers.frame.add(screwMesh);
+		this.disposeLater(screwGeo, screwMat);
+
+		// Antenna break lines: thin insulating bands interrupting the metal.
+		const bandGeo = new THREE.BoxGeometry(PHONE.width + 0.004, 0.012, PHONE.depth * 0.92);
+		const bandMat = new THREE.MeshStandardMaterial({
+			color: 0x2a2d34,
+			metalness: 0.1,
+			roughness: 0.75
+		});
+		const lines = createAntennaLines();
+		const bands = new THREE.InstancedMesh(bandGeo, bandMat, lines.length);
+		lines.forEach((normalisedY, index) => {
+			matrix.identity();
+			matrix.setPosition(0, normalisedY * PHONE.height, 0);
+			bands.setMatrixAt(index, matrix);
+		});
+		bands.instanceMatrix.needsUpdate = true;
+		this.layers.frame.add(bands);
+		this.disposeLater(bandGeo, bandMat);
 	}
 
 	/** @param {...({ dispose?: () => void } | { dispose?: () => void }[] | undefined)} items */
@@ -600,8 +821,7 @@ export class PhoneSceneEngine {
 		this.camera.aspect = width / height;
 		this.camera.updateProjectionMatrix();
 		this.renderer.setSize(width, height);
-		this.composer?.setSize(width, height);
-		this.bloomPass?.setSize(width, height);
+		this.post?.setSize(width, height);
 	}
 
 	/**
@@ -653,18 +873,67 @@ export class PhoneSceneEngine {
 
 		const average = this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
 		this.fpsSamples = [];
+		this.averageFps = average;
 
-		if (average < 40 && this.pixelRatio > 1) {
+		// Step 1: resolution is the cheapest lever, so spend it first.
+		if (average < 45 && this.pixelRatio > 1) {
 			this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
 			this.renderer.setPixelRatio(this.pixelRatio);
-		} else if (average < 32 && this.bloomPass?.enabled) {
-			// Resolution is already at the floor: drop the most expensive effect
-			// rather than keep stuttering.
-			this.bloomPass.enabled = false;
-		} else if (average > 58 && this.pixelRatio < this.basePixelRatio) {
+			return;
+		}
+		if (average > 58 && this.pixelRatio < this.basePixelRatio) {
 			this.pixelRatio = Math.min(this.basePixelRatio, this.pixelRatio + 0.25);
 			this.renderer.setPixelRatio(this.pixelRatio);
+			return;
 		}
+
+		// Step 2: resolution is already at the floor - change tier instead of
+		// stuttering forever. Demotion only; a promotion mid-scroll would change the
+		// look of the page under the user.
+		const nextTier = adaptTier(this.budget.tier, average);
+		if (nextTier !== this.budget.tier && average < 34) this.applyTier(nextTier);
+	}
+
+	/**
+	 * Move the whole scene to a different quality tier at runtime.
+	 * @param {import('./qualityTier.js').Tier} tier
+	 */
+	applyTier(tier) {
+		this.budget = budgetFor(tier);
+		this.basePixelRatio = Math.min(window.devicePixelRatio || 1, this.budget.pixelRatio);
+		this.pixelRatio = Math.min(this.pixelRatio, this.basePixelRatio);
+		this.renderer.setPixelRatio(this.pixelRatio);
+
+		if (!this.budget.postFx && this.post) {
+			this.post.dispose();
+			this.post = null;
+		} else if (this.post?.bloom) {
+			this.post.bloom.enabled = this.budget.bloom;
+		}
+		if (this.post?.grade) this.post.grade.enabled = this.budget.grade;
+
+		for (const light of this.softboxes ?? []) light.visible = tier !== 'low';
+		this.options.onTier?.(this.budget);
+	}
+
+	/**
+	 * Integrate the part springs towards the targets published by the scene
+	 * director. Called once per frame, before the subject is measured, so the
+	 * camera framing always follows the positions actually on screen.
+	 * @param {number} delta
+	 */
+	settleLayers(delta) {
+		if (!this.springs) return;
+
+		for (const [key, target] of Object.entries(this.layerTargets)) {
+			const layer = this.layers[key];
+			const spring = this.springs[key];
+			if (!layer || !spring) continue;
+			stepVectorSpring(spring, target, delta, LAYER_SPRING[key] ?? SPRINGS.solid, layer.position);
+		}
+
+		stepSpring(this.yawSpring, this.groupYawTarget, delta, SPRINGS.critical);
+		this.explodedGroup.rotation.y = this.yawSpring.value;
 	}
 
 	/**
@@ -694,8 +963,19 @@ export class PhoneSceneEngine {
 
 		if (document.hidden || !this.visible || this.contextLost) return;
 
+		// Frame pacing: on a capped tier we deliberately skip frames instead of
+		// letting the GPU run flat out. The same perceived smoothness at half the
+		// frames means half the heat, which on a phone is the difference between
+		// 60fps for ten seconds and 60fps for ten minutes.
+		if (this.budget.maxFps > 0) {
+			this.frameAccumulator = (this.frameAccumulator ?? 0) + delta;
+			if (this.frameAccumulator < 1 / this.budget.maxFps) return;
+			this.frameAccumulator = 0;
+		}
+
 		this.accentColor.setHex(this.accentColorHex);
 
+		this.settleLayers(delta);
 		this.measureSubject();
 		this.rig.update(this.scrollProgress, delta, this.reducedMotion ? 0 : elapsed);
 		this.particleSystem.update(elapsed, this.accentColorHex, this.reducedMotion);
@@ -721,14 +1001,17 @@ export class PhoneSceneEngine {
 
 		this.updateHotspots();
 		this.options.onHotspots?.(this.hotspots);
-
 		// The lying-flat reference body only makes sense while the stack is apart.
 		if (this.ghostPhone) this.ghostPhone.visible = this.explodedGroup.visible;
 		if (this.contactShadow) this.contactShadow.visible = this.explodedGroup.visible;
 
 		this.monitorPerformance(delta);
-		if (this.bloomPass?.enabled) this.composer.render(delta);
-		else this.renderer.render(this.scene, this.camera);
+		if (this.post) {
+			this.post.update(elapsed);
+			this.post.composer.render(delta);
+		} else {
+			this.renderer.render(this.scene, this.camera);
+		}
 	}
 
 	destroy() {
@@ -745,8 +1028,8 @@ export class PhoneSceneEngine {
 		this.disposables = [];
 		this.particleSystem.dispose();
 		this.envTarget?.dispose();
-		this.bloomPass?.dispose?.();
-		this.composer?.dispose?.();
+		this.post?.dispose();
+		this.post = null;
 
 		this.scene.traverse((child) => {
 			const mesh = /** @type {THREE.Mesh} */ (child);

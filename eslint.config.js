@@ -17,7 +17,7 @@ export default [
 	},
 	js.configs.recommended,
 	{
-		files: ['**/*.js'],
+		files: ['**/*.js', '**/*.mjs'],
 		languageOptions: {
 			ecmaVersion: 2023,
 			sourceType: 'module',
@@ -44,7 +44,7 @@ export default [
 		}
 	},
 	{
-		files: ['**/*.test.js', 'e2e/**/*.js'],
+		files: ['**/*.test.js', 'e2e/**/*.js', 'scripts/**/*.mjs'],
 		languageOptions: {
 			globals: { ...globals.node }
 		},

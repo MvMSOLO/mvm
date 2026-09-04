@@ -35,6 +35,42 @@ function approach(current, target, t) {
 	return THREE.MathUtils.lerp(current, target, t);
 }
 
+/**
+ * Publish a layer's target transform.
+ *
+ * Directors describe where a part *should* be; they never write the transform
+ * directly. The engine integrates a per-part spring towards these targets, so
+ * each layer arrives with its own weight. When no spring rig is attached (unit
+ * tests, reduced motion) the target is applied immediately, which keeps the
+ * director's output fully deterministic and testable.
+ *
+ * @param {any} engine
+ * @param {string} key
+ * @param {number} x @param {number} y @param {number} z
+ */
+function setLayerTarget(engine, key, x, y, z) {
+	const layer = engine.layers?.[key];
+	if (!layer) return;
+
+	engine.layerTargets ??= {};
+	const target = (engine.layerTargets[key] ??= { x: 0, y: 0, z: 0 });
+	target.x = x;
+	target.y = y;
+	target.z = z;
+
+	if (!engine.springs) layer.position.set(x, y, z);
+}
+
+/**
+ * Publish the exploded group's yaw target (same contract as above).
+ * @param {any} engine
+ * @param {number} radians
+ */
+function setGroupYaw(engine, radians) {
+	engine.groupYawTarget = radians;
+	if (!engine.springs) engine.explodedGroup.rotation.y = radians;
+}
+
 const FRONT_MULTIPLIER = Math.max(...Object.values(STACK));
 
 /**
@@ -52,12 +88,15 @@ function layoutStack(engine, gap, focus = {}) {
 	const heroZ = gap * FRONT_MULTIPLIER + (focus.lift ?? 0.35);
 
 	for (const [key, multiplier] of Object.entries(STACK)) {
-		const layer = engine.layers[key];
-		if (!layer) continue;
-		layer.position.z = key === focus.hero ? heroZ : gap * multiplier;
+		if (!engine.layers[key]) continue;
 		const fan = FAN[/** @type {keyof typeof FAN} */ (key)];
-		layer.position.x = gap * (fan?.x ?? 0);
-		layer.position.y = gap * (fan?.y ?? 0);
+		setLayerTarget(
+			engine,
+			key,
+			gap * (fan?.x ?? 0),
+			gap * (fan?.y ?? 0),
+			key === focus.hero ? heroZ : gap * multiplier
+		);
 	}
 }
 
@@ -103,7 +142,7 @@ const DIRECTORS = {
 		layoutStack(engine, 0.55 * eased);
 		engine.layers.glass.rotation.x = -0.05 * eased;
 		engine.layers.display.rotation.x = -0.03 * eased;
-		engine.explodedGroup.rotation.y = -0.35 * eased;
+		setGroupYaw(engine, -0.35 * eased);
 		if (engine.batteryGlowMat) engine.batteryGlowMat.opacity = 0;
 	},
 
@@ -111,7 +150,7 @@ const DIRECTORS = {
 		showExploded(engine);
 		// Compress the stack and float the logic board out in front of it.
 		layoutStack(engine, 0.5 * (1 - t * 0.35), { hero: 'board', lift: 0.3 + t * 0.5 });
-		engine.explodedGroup.rotation.y = approach(-0.35, 0.15, t);
+		setGroupYaw(engine, approach(-0.35, 0.15, t));
 		const shader = engine.shaderMaterials.boardShader;
 		if (shader) shader.uniforms.uScroll.value = t;
 	},
@@ -119,7 +158,7 @@ const DIRECTORS = {
 	energy(engine, t) {
 		showExploded(engine);
 		layoutStack(engine, 0.35, { hero: 'battery', lift: 0.3 + t * 0.4 });
-		engine.explodedGroup.rotation.y = approach(0.15, -0.1, t);
+		setGroupYaw(engine, approach(0.15, -0.1, t));
 		if (engine.batteryGlowMat) {
 			// Charge pulse that fades in with the chapter.
 			const pulse = 0.5 + 0.5 * Math.sin(engine.clock.getElapsedTime() * 2.2);
@@ -130,7 +169,7 @@ const DIRECTORS = {
 	intelligence(engine, t) {
 		showExploded(engine);
 		layoutStack(engine, 0.25 + 0.25 * (1 - t), { hero: 'board', lift: 0.3 * (1 - t) + 0.05 });
-		engine.explodedGroup.rotation.y = approach(-0.1, 0, t);
+		setGroupYaw(engine, approach(-0.1, 0, t));
 		if (engine.batteryGlowMat) engine.batteryGlowMat.opacity = 0;
 	},
 
@@ -140,7 +179,7 @@ const DIRECTORS = {
 			// Collapse the stack back together before swapping to the solid model.
 			showExploded(engine);
 			layoutStack(engine, 0.25 * (1 - eased / 0.45));
-			engine.explodedGroup.rotation.y = 0;
+			setGroupYaw(engine, 0);
 		} else {
 			showAssembled(engine);
 			const local = (eased - 0.45) / 0.55;

@@ -187,3 +187,66 @@ export function createContactShadow(radius = PHONE.width * 1.6) {
 	mesh.renderOrder = -1;
 	return { mesh, geometry, material };
 }
+
+/**
+ * Speaker grille: real holes, evenly spaced along the bottom rail. Returned as
+ * positions for an `InstancedMesh` so 24 holes cost one draw call.
+ * @param {{ count?: number, span?: number, y?: number }} [options]
+ */
+export function createGrilleLayout(options = {}) {
+	const { count = 14, span = PHONE.width * 0.42, y = -PHONE.height / 2 + 0.02 } = options;
+	const safeCount = Math.max(1, Math.floor(count));
+	const step = safeCount > 1 ? span / (safeCount - 1) : 0;
+
+	return Array.from({ length: safeCount }, (_, index) => ({
+		x: -span / 2 + step * index,
+		y,
+		radius: 0.012
+	}));
+}
+
+/**
+ * Chassis screws: the single cheapest detail that makes a render read as a real
+ * machined product rather than a smooth CAD preview.
+ * @param {{ width?: number, height?: number, inset?: number }} [options]
+ */
+export function createScrewLayout(options = {}) {
+	const { width = PHONE.width, height = PHONE.height, inset = 0.11 } = options;
+	const x = width / 2 - inset;
+	const y = height / 2 - inset;
+
+	return [
+		{ name: 'tl', x: -x, y },
+		{ name: 'tr', x, y },
+		{ name: 'bl', x: -x, y: -y },
+		{ name: 'br', x, y: -y },
+		{ name: 'ml', x: -x, y: 0 },
+		{ name: 'mr', x, y: 0 }
+	];
+}
+
+/**
+ * Antenna break lines on the titanium rail, as normalised heights (-0.5..0.5).
+ */
+export function createAntennaLines() {
+	return [0.34, 0.02, -0.3];
+}
+
+/**
+ * Flex cable: a swept tube along a smooth curve, so the board and the display
+ * stay physically connected while the stack pulls apart.
+ *
+ * @param {{ from?: [number, number, number], to?: [number, number, number], bulge?: number, radius?: number, segments?: number }} [options]
+ */
+export function createFlexCableGeometry(options = {}) {
+	const { from = [0, 0, 0], to = [0, 1, 0], bulge = 0.25, radius = 0.012, segments = 48 } = options;
+
+	const start = new THREE.Vector3(...from);
+	const end = new THREE.Vector3(...to);
+	const middle = start.clone().lerp(end, 0.5);
+	// Push the midpoint sideways so the cable bows instead of stretching straight.
+	middle.x += bulge;
+
+	const curve = new THREE.CatmullRomCurve3([start, middle, end], false, 'catmullrom', 0.5);
+	return new THREE.TubeGeometry(curve, Math.max(4, segments), Math.max(radius, 1e-4), 8, false);
+}

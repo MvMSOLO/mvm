@@ -2,7 +2,7 @@
 	// Self-hosted, latin-only font subsets. Importing them here means Vite
 	// fingerprints and preloads the woff2 files with the rest of the bundle
 	// instead of hitting a third-party CDN mid-render.
-	import '@fontsource-variable/inter/wght.css';
+	import '$lib/styles/fonts.css';
 	import '@fontsource/syne/latin-700.css';
 	import '@fontsource/syne/latin-800.css';
 	import '@fontsource/space-grotesk/latin-400.css';
