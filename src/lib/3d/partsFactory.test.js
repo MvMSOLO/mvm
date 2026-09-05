@@ -20,6 +20,11 @@ import {
 	createPunchHoleLayout,
 	createMicSlotLayout,
 	createPcbTraceLayout,
+	createCoilSpiral,
+	createSimTray,
+	createBatteryTabs,
+	createDisplayStack,
+	createTapticEngine,
 	normaliseUv
 } from './partsFactory.js';
 
@@ -367,5 +372,73 @@ describe('createPcbTraceLayout', () => {
 		}
 		expect(traces.some((t) => t.vertical)).toBe(true);
 		expect(traces.some((t) => !t.vertical)).toBe(true);
+	});
+});
+
+describe('createCoilSpiral', () => {
+	it('winds outward monotonically instead of repeating one ring', () => {
+		const points = createCoilSpiral({ turns: 4, inner: 0.1, outer: 0.4 });
+		const first = Math.hypot(points[0].x, points[0].y);
+		const last = Math.hypot(points.at(-1).x, points.at(-1).y);
+		expect(first).toBeCloseTo(0.1, 3);
+		expect(last).toBeCloseTo(0.4, 3);
+	});
+
+	it('stays flat enough to fit behind the cell', () => {
+		for (const point of createCoilSpiral()) {
+			expect(point.z).toBeGreaterThanOrEqual(0);
+			expect(point.z).toBeLessThanOrEqual(0.0061);
+		}
+	});
+
+	it('produces enough samples for a smooth sweep and clamps bad input', () => {
+		expect(createCoilSpiral({ turns: 9 }).length).toBeGreaterThan(300);
+		expect(createCoilSpiral({ turns: 0 }).length).toBeGreaterThanOrEqual(5);
+	});
+});
+
+describe('createSimTray', () => {
+	it('sits on the left rail with a pinhole beside it', () => {
+		const tray = createSimTray();
+		expect(tray.x).toBeCloseTo(-PHONE.width / 2);
+		expect(tray.length).toBeGreaterThan(0);
+		expect(tray.pinhole.radius).toBeGreaterThan(0);
+		expect(tray.pinhole.offset).toBeGreaterThan(tray.pinhole.radius);
+	});
+});
+
+describe('createBatteryTabs', () => {
+	it('welds both tabs to the same end of the cell', () => {
+		const tabs = createBatteryTabs({ width: 1, height: 2 });
+		expect(tabs).toHaveLength(2);
+		expect(tabs[0].y).toBeCloseTo(tabs[1].y);
+		expect(tabs[0].x).toBeLessThan(0);
+		expect(tabs[1].x).toBeGreaterThan(0);
+	});
+});
+
+describe('createDisplayStack', () => {
+	it('orders the laminate front to back', () => {
+		const stack = createDisplayStack();
+		const offsets = stack.map((layer) => layer.offset);
+		expect(offsets).toEqual([...offsets].sort((a, b) => b - a));
+	});
+
+	it('keeps every sheet thin and the spreader opaque', () => {
+		const stack = createDisplayStack();
+		for (const layer of stack) {
+			expect(layer.depth).toBeGreaterThan(0);
+			expect(layer.depth).toBeLessThan(0.01);
+		}
+		expect(stack.at(-1)?.opacity).toBe(1);
+	});
+});
+
+describe('createTapticEngine', () => {
+	it('fits inside the body and leaves the mass room to travel', () => {
+		const spec = createTapticEngine();
+		expect(Math.abs(spec.x) + spec.width / 2).toBeLessThan(PHONE.width);
+		expect(spec.mass.width).toBeLessThan(spec.width);
+		expect(spec.mass.travel).toBeGreaterThan(0);
 	});
 });

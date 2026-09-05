@@ -452,3 +452,102 @@ export function createPcbTraceLayout(options = {}) {
 		};
 	});
 }
+
+/**
+ * Wireless-charging coil, as a flat spiral for `TubeGeometry`.
+ *
+ * A real Qi coil is one long enamelled wire wound flat; drawing it as concentric
+ * rings is the usual shortcut and it always reads as rings. A true spiral has a
+ * visible crossover where the wire steps inward, which is the detail the eye
+ * uses to identify it.
+ *
+ * @param {{ turns?: number, inner?: number, outer?: number, segmentsPerTurn?: number }} [options]
+ * @returns {THREE.Vector3[]}
+ */
+export function createCoilSpiral(options = {}) {
+	const { turns = 9, inner = 0.14, outer = 0.42, segmentsPerTurn = 36 } = options;
+	const safeTurns = Math.max(1, turns);
+	const total = Math.max(4, Math.round(safeTurns * segmentsPerTurn));
+	const points = [];
+
+	for (let i = 0; i <= total; i++) {
+		const t = i / total;
+		const angle = t * safeTurns * Math.PI * 2;
+		const radius = inner + (outer - inner) * t;
+		points.push(
+			new THREE.Vector3(
+				Math.cos(angle) * radius,
+				Math.sin(angle) * radius,
+				// Each turn sits a hair above the last, exactly like a wound coil.
+				t * 0.006
+			)
+		);
+	}
+
+	return points;
+}
+
+/**
+ * The SIM tray: a seam on the left rail with its ejection pinhole. Nothing says
+ * "real hardware" faster than a panel line that is deliberately imperfect.
+ *
+ * @param {{ height?: number, width?: number }} [options]
+ */
+export function createSimTray(options = {}) {
+	const { height = PHONE.height, width = PHONE.width } = options;
+	return {
+		x: -width / 2,
+		y: -height * 0.06,
+		length: height * 0.06,
+		depth: PHONE.depth * 0.55,
+		seam: 0.0035,
+		pinhole: { offset: height * 0.024, radius: 0.008 }
+	};
+}
+
+/**
+ * Battery terminal tabs. Cells are welded to the board through two nickel tabs
+ * at one end, never wired from the middle.
+ * @param {{ width?: number, height?: number }} [options]
+ */
+export function createBatteryTabs(options = {}) {
+	const { width = PHONE.width * 0.85, height = PHONE.height * 0.45 } = options;
+	return [
+		{ name: 'positive', x: -width * 0.18, y: height * 0.5, width: 0.06, height: 0.05 },
+		{ name: 'negative', x: width * 0.18, y: height * 0.5, width: 0.06, height: 0.05 }
+	];
+}
+
+/**
+ * The display is not one sheet. From the front: polariser, encapsulation, the
+ * emissive OLED plane, the touch digitiser mesh and a graphite heat spreader.
+ * Stacking five thin slabs means the edge of the panel shows layers when the
+ * camera looks along it, which is exactly what a teardown photo shows.
+ *
+ * @returns {Array<{ name: string, depth: number, offset: number, opacity: number, roughness: number }>}
+ */
+export function createDisplayStack() {
+	return [
+		{ name: 'polariser', depth: 0.0035, offset: 0.012, opacity: 0.35, roughness: 0.12 },
+		{ name: 'encapsulation', depth: 0.003, offset: 0.008, opacity: 0.22, roughness: 0.08 },
+		{ name: 'digitiser', depth: 0.0025, offset: -0.008, opacity: 0.3, roughness: 0.45 },
+		{ name: 'graphite', depth: 0.004, offset: -0.013, opacity: 1, roughness: 0.85 }
+	];
+}
+
+/**
+ * Linear resonant actuator (the haptic engine): a mass on rails inside a
+ * shielded can, offset to one side of the board like the real part.
+ * @param {{ width?: number, height?: number }} [options]
+ */
+export function createTapticEngine(options = {}) {
+	const { width = PHONE.width, height = PHONE.height } = options;
+	return {
+		x: width * 0.2,
+		y: -height * 0.3,
+		width: width * 0.34,
+		height: height * 0.075,
+		depth: 0.03,
+		mass: { width: width * 0.16, height: height * 0.03, travel: 0.02 }
+	};
+}

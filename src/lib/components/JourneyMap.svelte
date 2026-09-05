@@ -29,10 +29,14 @@
 		aria-label={`Journey progress ${percent} percent, at ${activeNode?.label ?? ''}`}
 	>
 		<path class="track" d={route.path} />
+		<!-- pathLength="1" normalises the dash maths, so the trail length matches
+		     scroll progress exactly instead of depending on the path's user units. -->
 		<path
 			class="trail"
 			d={route.path}
-			style={`stroke-dasharray: 1000; stroke-dashoffset: ${1000 - 1000 * Math.min(Math.max(progress, 0), 1)};`}
+			pathLength="1"
+			stroke-dasharray="1"
+			stroke-dashoffset={1 - Math.min(Math.max(progress, 0), 1)}
 		/>
 
 		{#each route.nodes as node, index (node.id)}

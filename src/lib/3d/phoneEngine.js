@@ -29,7 +29,12 @@ import {
 	createApertureBladeLayout,
 	createPunchHoleLayout,
 	createMicSlotLayout,
-	createPcbTraceLayout
+	createPcbTraceLayout,
+	createCoilSpiral,
+	createSimTray,
+	createBatteryTabs,
+	createDisplayStack,
+	createTapticEngine
 } from './partsFactory.js';
 import { directScene } from './scenes/sceneManager.js';
 import {
@@ -520,6 +525,7 @@ export class PhoneSceneEngine {
 		this.layers.display.add(new THREE.Mesh(displayGeo, this.shaderMaterials.displayShader));
 		this.disposeLater(displayGeo, this.shaderMaterials.displayShader);
 		this.buildDisplayCutouts(width, height, env);
+		this.buildDisplayStack(width, height);
 
 		// 03 — titanium chassis: a hollow rail, so the stack stays see-through
 		const frameGeo = createRailGeometry();
@@ -540,6 +546,7 @@ export class PhoneSceneEngine {
 		this.layers.frame.add(new THREE.Mesh(frameGeo, frameMat));
 		this.disposeLater(frameGeo, frameMat);
 		this.buildRailDetails(frameMat, env);
+		this.buildSimTray(frameMat);
 
 		// 04 — penta camera array (was previously an empty group)
 		const plateGeo = createSlabGeometry({
@@ -629,9 +636,10 @@ export class PhoneSceneEngine {
 			const small = lensSpec.name === 'tof';
 
 			if (!small) {
-				// The lathe profile is built along +Y, so lay it down to face +Z.
+				// The lathe profile is built along +Y, so rotate +Y onto +Z: the barrel
+				// has to grow out of the plateau towards the viewer, not into the body.
 				const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-				barrel.rotation.x = -Math.PI / 2;
+				barrel.rotation.x = Math.PI / 2;
 				barrel.position.set(lensSpec.x, y, 0.01);
 
 				const ring = new THREE.Mesh(ringGeo, barrelMat);
@@ -721,6 +729,7 @@ export class PhoneSceneEngine {
 		this.layers.board.add(new THREE.Mesh(boardGeo, this.shaderMaterials.boardShader));
 		this.disposeLater(boardGeo, this.shaderMaterials.boardShader);
 		this.buildBoardTraces(boardWidth, boardHeight);
+		this.buildTapticEngine(width, height, env);
 
 		// Real silicon on the board: the NPU die plus its supporting packages.
 		const chipMat = new THREE.MeshPhysicalMaterial({
@@ -797,6 +806,7 @@ export class PhoneSceneEngine {
 		glow.position.z = 0.04;
 		this.layers.battery.add(glow);
 		this.disposeLater(glowGeo, this.batteryGlowMat);
+		this.buildPowerDetails(width, height);
 
 		// Soft contact shadow under the whole device: grounds the object so it no
 		// longer looks like it is floating in a void.
@@ -1431,6 +1441,177 @@ export class PhoneSceneEngine {
 			const load = 0.35 + 0.5 * Math.max(0, Math.sin(elapsed * 1.8)) * amplitude;
 			this.npuMat.emissiveIntensity = this.explodedGroup.visible ? load : 0.35;
 		}
+
+		// Haptic mass: a fast oscillation on the axis it is actually free to move
+		// along, at an amplitude you can see but that never detaches from the can.
+		if (this.taptic) {
+			const buzz = Math.sin(elapsed * 26) * this.taptic.travel * 0.35 * amplitude;
+			this.taptic.mass.position.y = this.taptic.home + buzz;
+		}
+
+		// The charging coil turns slowly: it reads as an induction field without
+		// needing a particle effect.
+		if (this.chargingCoil) {
+			this.chargingCoil.rotation.z = elapsed * 0.12 * amplitude;
+		}
+	}
+
+	/**
+	 * The panel as a laminate rather than a single sheet: polariser,
+	 * encapsulation, digitiser and graphite spreader. When the camera looks along
+	 * the edge you can count the layers, the way you can in a teardown photo.
+	 *
+	 * @param {number} width
+	 * @param {number} height
+	 */
+	buildDisplayStack(width, height) {
+		for (const layer of createDisplayStack()) {
+			const geometry = createSlabGeometry({
+				// Each sheet is cut slightly smaller than the one in front, so the
+				// laminate steps inward instead of showing as one thick slab.
+				width: width * 0.95 - Math.abs(layer.offset) * 0.6,
+				height: height * 0.96 - Math.abs(layer.offset) * 0.6,
+				depth: layer.depth,
+				radius: PHONE.corner * 0.86
+			});
+			const material = new THREE.MeshPhysicalMaterial({
+				color: layer.name === 'graphite' ? 0x0b0c0f : 0x1a2028,
+				metalness: layer.name === 'graphite' ? 0.4 : 0.1,
+				roughness: layer.roughness,
+				transparent: layer.opacity < 1,
+				opacity: layer.opacity,
+				depthWrite: layer.opacity >= 1
+			});
+			const mesh = new THREE.Mesh(geometry, material);
+			mesh.position.z = layer.offset;
+			this.layers.display.add(mesh);
+			this.disposeLater(geometry, material);
+		}
+	}
+
+	/**
+	 * Haptic engine: a shielded can with a moving mass inside. Kept on
+	 * `this.taptic` so the mass can be driven by the same impulse that shakes the
+	 * camera — the part you feel in your hand is visibly the part that moves.
+	 *
+	 * @param {number} width
+	 * @param {number} height
+	 * @param {number} env
+	 */
+	buildTapticEngine(width, height, env) {
+		const spec = createTapticEngine({ width, height });
+		const canGeo = createSlabGeometry({
+			width: spec.width,
+			height: spec.height,
+			depth: spec.depth,
+			radius: 0.014
+		});
+		const canMat = new THREE.MeshPhysicalMaterial({
+			color: 0x9aa0aa,
+			metalness: 1,
+			roughness: 0.34,
+			envMapIntensity: 1.7 * env
+		});
+		const can = new THREE.Mesh(canGeo, canMat);
+		can.position.set(spec.x, spec.y, 0.02);
+
+		const massGeo = createSlabGeometry({
+			width: spec.mass.width,
+			height: spec.mass.height,
+			depth: 0.016,
+			radius: 0.006
+		});
+		const massMat = new THREE.MeshPhysicalMaterial({
+			color: 0x3a3d44,
+			metalness: 0.95,
+			roughness: 0.28
+		});
+		const mass = new THREE.Mesh(massGeo, massMat);
+		mass.position.set(spec.x, spec.y, 0.032);
+
+		this.taptic = { mass, home: spec.y, travel: spec.mass.travel };
+		this.layers.board.add(can, mass);
+		this.disposeLater(canGeo, canMat, massGeo, massMat);
+	}
+
+	/**
+	 * Wireless charging coil and the cell's welded terminal tabs, both on the
+	 * battery layer. The coil is a single swept spiral, so the crossover where the
+	 * wire steps inward is visible instead of reading as concentric rings.
+	 *
+	 * @param {number} width
+	 * @param {number} height
+	 */
+	buildPowerDetails(width, height) {
+		const points = createCoilSpiral({
+			turns: this.budget.tier === 'low' ? 6 : 10,
+			inner: width * 0.1,
+			outer: width * 0.32
+		});
+		const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+		const coilGeo = new THREE.TubeGeometry(curve, Math.min(points.length, 480), 0.005, 6, false);
+		const coilMat = new THREE.MeshPhysicalMaterial({
+			color: 0xb5762c,
+			metalness: 1,
+			roughness: 0.3,
+			// Enamel over copper: a thin varnish coat, not bare metal.
+			clearcoat: 0.6,
+			clearcoatRoughness: 0.35
+		});
+		const coil = new THREE.Mesh(coilGeo, coilMat);
+		coil.position.set(0, height * 0.08, -0.045);
+		this.chargingCoil = coil;
+		this.layers.battery.add(coil);
+		this.disposeLater(coilGeo, coilMat);
+
+		const tabMat = new THREE.MeshPhysicalMaterial({
+			color: 0xd7dae0,
+			metalness: 1,
+			roughness: 0.22
+		});
+		this.disposeLater(tabMat);
+		for (const tab of createBatteryTabs({ width: width * 0.85, height: height * 0.45 })) {
+			const geometry = createSlabGeometry({
+				width: tab.width,
+				height: tab.height,
+				depth: 0.008,
+				radius: 0.004
+			});
+			const mesh = new THREE.Mesh(geometry, tabMat);
+			mesh.position.set(tab.x, tab.y, 0.02);
+			this.layers.battery.add(mesh);
+			this.disposeLater(geometry);
+		}
+	}
+
+	/**
+	 * SIM tray: a panel line on the left rail with its ejection pinhole. Panel
+	 * lines are what stop a machined body from looking like one solid billet.
+	 *
+	 * @param {THREE.MeshPhysicalMaterial} railMat
+	 */
+	buildSimTray(railMat) {
+		const spec = createSimTray();
+		const trayGeo = new THREE.BoxGeometry(spec.seam * 3, spec.length, spec.depth);
+		const tray = new THREE.Mesh(trayGeo, railMat);
+		tray.position.set(spec.x + spec.seam, spec.y, 0);
+
+		const seamGeo = new THREE.BoxGeometry(spec.seam, spec.length, spec.depth * 1.02);
+		const seamMat = new THREE.MeshStandardMaterial({
+			color: 0x07080c,
+			metalness: 0.2,
+			roughness: 0.9
+		});
+		const seam = new THREE.Mesh(seamGeo, seamMat);
+		seam.position.set(spec.x + spec.seam * 0.2, spec.y, 0);
+
+		const pinGeo = new THREE.CylinderGeometry(spec.pinhole.radius, spec.pinhole.radius, 0.02, 10);
+		const pin = new THREE.Mesh(pinGeo, seamMat);
+		pin.rotation.z = Math.PI / 2;
+		pin.position.set(spec.x + 0.006, spec.y - spec.pinhole.offset, 0);
+
+		this.layers.frame.add(tray, seam, pin);
+		this.disposeLater(trayGeo, seamGeo, seamMat, pinGeo);
 	}
 
 	destroy() {
