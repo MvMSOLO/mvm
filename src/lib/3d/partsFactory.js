@@ -349,3 +349,106 @@ export function createCameraPlateau(options = {}) {
 		rise
 	};
 }
+
+/**
+ * Lathe profile for one camera barrel, in cross-section.
+ *
+ * A real lens barrel is not a cylinder: it steps down through a retaining ring,
+ * a knurled focus collar and a chamfer before the cover glass. Because the
+ * silhouette is what the eye reads first, these four steps do more for realism
+ * than any texture on a straight cylinder would.
+ *
+ * @param {{ radius?: number, height?: number }} [options]
+ * @returns {THREE.Vector2[]} profile points, from the axis outward and up
+ */
+export function createLensProfile(options = {}) {
+	const { radius = 0.13, height = 0.085 } = options;
+	const r = Math.max(radius, 1e-4);
+	const h = Math.max(height, 1e-4);
+
+	// x = distance from the axis, y = height above the plateau.
+	return [
+		new THREE.Vector2(0, 0),
+		new THREE.Vector2(r * 1.05, 0),
+		new THREE.Vector2(r * 1.05, h * 0.18),
+		new THREE.Vector2(r * 0.97, h * 0.26),
+		new THREE.Vector2(r * 0.97, h * 0.6),
+		new THREE.Vector2(r * 0.88, h * 0.72),
+		new THREE.Vector2(r * 0.86, h * 0.9),
+		new THREE.Vector2(r * 0.72, h),
+		new THREE.Vector2(0, h)
+	];
+}
+
+/**
+ * Aperture blade angles. Nine blades is the flagship convention, and it is why
+ * point lights in a photo come out as nine-pointed stars.
+ * @param {number} [count]
+ * @returns {number[]} radians
+ */
+export function createApertureBladeLayout(count = 9) {
+	const safe = Math.max(3, Math.floor(count));
+	return Array.from({ length: safe }, (_, i) => (i / safe) * Math.PI * 2);
+}
+
+/**
+ * Everything punched through the display glass: the front camera hole and the
+ * earpiece slot above it.
+ * @returns {Array<{ name: string, x: number, y: number, radius?: number, width?: number, height?: number }>}
+ */
+export function createPunchHoleLayout() {
+	return [
+		{ name: 'selfie', x: 0, y: PHONE.height * 0.4, radius: 0.052 },
+		{
+			name: 'earpiece',
+			x: 0,
+			y: PHONE.height * 0.455,
+			width: PHONE.width * 0.22,
+			height: 0.018
+		}
+	];
+}
+
+/**
+ * Microphone and speaker perforations on the top and bottom rails.
+ * @returns {Array<{ name: string, x: number, y: number, radius: number }>}
+ */
+export function createMicSlotLayout() {
+	const bottom = -PHONE.height / 2;
+	const top = PHONE.height / 2;
+	return [
+		{ name: 'mic-bottom', x: -PHONE.width * 0.3, y: bottom + 0.012, radius: 0.014 },
+		{ name: 'mic-top', x: PHONE.width * 0.28, y: top - 0.012, radius: 0.012 },
+		{ name: 'mic-noise', x: -PHONE.width * 0.05, y: top - 0.012, radius: 0.01 }
+	];
+}
+
+/**
+ * Deterministic copper trace layout for the logic board. Seeded so the same
+ * board comes back every run: a board that reshuffles on reload reads as noise.
+ *
+ * @param {{ count?: number, seed?: number }} [options]
+ * @returns {Array<{ x: number, y: number, length: number, vertical: boolean }>}
+ */
+export function createPcbTraceLayout(options = {}) {
+	const { count = 26, seed = 1337 } = options;
+	const safe = Math.max(1, Math.floor(count));
+	let state = seed >>> 0;
+	const random = () => {
+		// xorshift32: tiny, dependency-free, and identical across platforms.
+		state ^= state << 13;
+		state ^= state >>> 17;
+		state ^= state << 5;
+		return ((state >>> 0) % 100000) / 100000;
+	};
+
+	return Array.from({ length: safe }, (_, index) => {
+		const vertical = index % 3 === 0;
+		return {
+			x: (random() - 0.5) * 0.86,
+			y: (random() - 0.5) * 0.86,
+			length: 0.08 + random() * 0.3,
+			vertical
+		};
+	});
+}

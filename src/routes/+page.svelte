@@ -5,6 +5,7 @@
 	import { CHAPTERS, LAYERS, SPECS, chapterAt } from '$lib/data/product.js';
 	import { reveal } from '$lib/actions/reveal.js';
 	import ProgressRail from '$lib/components/ProgressRail.svelte';
+	import JourneyMap from '$lib/components/JourneyMap.svelte';
 	import SiteHeader from '$lib/components/SiteHeader.svelte';
 	import LoaderScreen from '$lib/components/LoaderScreen.svelte';
 	import Configurator from '$lib/components/Configurator.svelte';
@@ -151,6 +152,9 @@
 
 <SiteHeader activeId={activeChapter.id} onJump={jumpTo} />
 <ProgressRail {progress} activeId={activeChapter.id} onJump={jumpTo} />
+{#if !loading}
+	<JourneyMap {progress} onJump={jumpTo} />
+{/if}
 
 <main id="main">
 	<div class="cinematic" data-cinematic bind:this={cinematicRegion}>

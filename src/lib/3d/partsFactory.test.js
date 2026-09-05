@@ -15,6 +15,11 @@ import {
 	createButtonLayout,
 	createPortShape,
 	createCameraPlateau,
+	createLensProfile,
+	createApertureBladeLayout,
+	createPunchHoleLayout,
+	createMicSlotLayout,
+	createPcbTraceLayout,
 	normaliseUv
 } from './partsFactory.js';
 
@@ -277,5 +282,90 @@ describe('createCameraPlateau', () => {
 		const { offset } = createCameraPlateau();
 		expect(offset.x).toBeLessThan(0);
 		expect(offset.y).toBeGreaterThan(0);
+	});
+});
+
+describe('createLensProfile', () => {
+	it('starts and ends on the axis so the lathe closes', () => {
+		const profile = createLensProfile();
+		expect(profile[0].x).toBe(0);
+		expect(profile.at(-1)?.x).toBe(0);
+	});
+
+	it('never rises above the requested height or exceeds the radius', () => {
+		const profile = createLensProfile({ radius: 0.2, height: 0.1 });
+		for (const point of profile) {
+			expect(point.y).toBeGreaterThanOrEqual(0);
+			expect(point.y).toBeLessThanOrEqual(0.1 + 1e-6);
+			expect(point.x).toBeLessThanOrEqual(0.2 * 1.05 + 1e-6);
+		}
+	});
+
+	it('steps inward towards the mouth, which is what reads as a barrel', () => {
+		const profile = createLensProfile();
+		const widest = Math.max(...profile.map((p) => p.x));
+		expect(profile.at(-2)?.x).toBeLessThan(widest);
+	});
+});
+
+describe('createApertureBladeLayout', () => {
+	it('spreads the blades evenly around the circle', () => {
+		const angles = createApertureBladeLayout(9);
+		expect(angles).toHaveLength(9);
+		expect(angles[1] - angles[0]).toBeCloseTo((Math.PI * 2) / 9);
+	});
+
+	it('clamps to a physically sensible minimum', () => {
+		expect(createApertureBladeLayout(0)).toHaveLength(3);
+		expect(createApertureBladeLayout(2.7)).toHaveLength(3);
+	});
+});
+
+describe('createPunchHoleLayout', () => {
+	it('puts the camera hole and earpiece near the top of the panel', () => {
+		const cutouts = createPunchHoleLayout();
+		expect(cutouts).toHaveLength(2);
+		for (const cutout of cutouts) {
+			expect(cutout.y).toBeGreaterThan(0);
+			expect(cutout.y).toBeLessThan(PHONE.height / 2);
+		}
+	});
+
+	it('describes the camera as a circle and the earpiece as a slot', () => {
+		const [selfie, earpiece] = createPunchHoleLayout();
+		expect(selfie.radius).toBeGreaterThan(0);
+		expect(earpiece.width).toBeGreaterThan(earpiece.height ?? 0);
+	});
+});
+
+describe('createMicSlotLayout', () => {
+	it('keeps every perforation on a rail edge and inside the body', () => {
+		for (const slot of createMicSlotLayout()) {
+			expect(Math.abs(slot.y)).toBeLessThanOrEqual(PHONE.height / 2);
+			expect(Math.abs(slot.x)).toBeLessThan(PHONE.width / 2);
+			expect(slot.radius).toBeGreaterThan(0);
+		}
+	});
+});
+
+describe('createPcbTraceLayout', () => {
+	it('is deterministic for a given seed', () => {
+		expect(createPcbTraceLayout({ seed: 42 })).toEqual(createPcbTraceLayout({ seed: 42 }));
+	});
+
+	it('changes with the seed', () => {
+		expect(createPcbTraceLayout({ seed: 1 })).not.toEqual(createPcbTraceLayout({ seed: 2 }));
+	});
+
+	it('keeps traces on the board and mixes orientations', () => {
+		const traces = createPcbTraceLayout({ count: 30 });
+		expect(traces).toHaveLength(30);
+		for (const trace of traces) {
+			expect(Math.abs(trace.x)).toBeLessThanOrEqual(0.5);
+			expect(Math.abs(trace.y)).toBeLessThanOrEqual(0.5);
+			expect(trace.length).toBeGreaterThan(0);
+		}
+		expect(traces.some((t) => t.vertical)).toBe(true);
+		expect(traces.some((t) => !t.vertical)).toBe(true);
 	});
 });

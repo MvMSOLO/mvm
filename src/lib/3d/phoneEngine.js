@@ -24,7 +24,12 @@ import {
 	createButtonLayout,
 	createPortShape,
 	createCameraPlateau,
-	createFlexCableGeometry
+	createFlexCableGeometry,
+	createLensProfile,
+	createApertureBladeLayout,
+	createPunchHoleLayout,
+	createMicSlotLayout,
+	createPcbTraceLayout
 } from './partsFactory.js';
 import { directScene } from './scenes/sceneManager.js';
 import {
@@ -514,6 +519,7 @@ export class PhoneSceneEngine {
 		});
 		this.layers.display.add(new THREE.Mesh(displayGeo, this.shaderMaterials.displayShader));
 		this.disposeLater(displayGeo, this.shaderMaterials.displayShader);
+		this.buildDisplayCutouts(width, height, env);
 
 		// 03 — titanium chassis: a hollow rail, so the stack stays see-through
 		const frameGeo = createRailGeometry();
@@ -553,9 +559,12 @@ export class PhoneSceneEngine {
 		this.layers.camera.add(plate);
 		this.disposeLater(plateGeo, plateMat);
 
-		const barrelGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.08, 40);
-		const ringGeo = new THREE.TorusGeometry(0.135, 0.012, 12, 40);
-		const lensGeo = new THREE.SphereGeometry(0.105, 32, 20);
+		const barrelGeo = new THREE.LatheGeometry(
+			createLensProfile({ radius: 0.13, height: 0.085 }),
+			48
+		);
+		const ringGeo = new THREE.TorusGeometry(0.135, 0.012, 16, 48);
+		const lensGeo = new THREE.SphereGeometry(0.105, 40, 24);
 		const tofGeo = new THREE.SphereGeometry(0.06, 24, 16);
 		const barrelMat = new THREE.MeshPhysicalMaterial({
 			color: 0x101215,
@@ -594,14 +603,36 @@ export class PhoneSceneEngine {
 		this.disposeLater(plateau.geometry, plateauMat);
 
 		// Penta array: four full barrels plus a smaller time-of-flight sensor.
+		// Each barrel is a real assembly — machined housing, retaining ring, nine
+		// aperture blades, a coated front element and a sensor die behind it — and
+		// each one is kept in `this.lensRigs` so it can be animated later.
+		/** @type {Array<{ name: string, element: THREE.Mesh, blades: THREE.Group, phase: number }>} */
+		this.lensRigs = [];
+		const bladeGeo = new THREE.BoxGeometry(0.085, 0.006, 0.004);
+		const bladeMat = new THREE.MeshPhysicalMaterial({
+			color: 0x1b1e24,
+			metalness: 0.85,
+			roughness: 0.35
+		});
+		const sensorGeo = new THREE.BoxGeometry(0.11, 0.11, 0.01);
+		const sensorMat = new THREE.MeshPhysicalMaterial({
+			color: 0x1d2f3a,
+			metalness: 0.5,
+			roughness: 0.5,
+			emissive: new THREE.Color(0x06202c),
+			emissiveIntensity: 0.4
+		});
+		this.disposeLater(bladeGeo, bladeMat, sensorGeo, sensorMat);
+
 		for (const lensSpec of createLensLayout()) {
 			const y = height * 0.28 + lensSpec.y;
 			const small = lensSpec.name === 'tof';
 
 			if (!small) {
+				// The lathe profile is built along +Y, so lay it down to face +Z.
 				const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-				barrel.rotation.x = Math.PI / 2;
-				barrel.position.set(lensSpec.x, y, 0.045);
+				barrel.rotation.x = -Math.PI / 2;
+				barrel.position.set(lensSpec.x, y, 0.01);
 
 				const ring = new THREE.Mesh(ringGeo, barrelMat);
 				ring.position.set(lensSpec.x, y, 0.075);
@@ -610,7 +641,29 @@ export class PhoneSceneEngine {
 				lens.position.set(lensSpec.x, y, 0.07);
 				lens.scale.z = 0.55;
 
-				this.layers.camera.add(barrel, ring, lens);
+				// Aperture blades, sunk just inside the barrel mouth.
+				const blades = new THREE.Group();
+				blades.position.set(lensSpec.x, y, 0.052);
+				for (const angle of createApertureBladeLayout(9)) {
+					const blade = new THREE.Mesh(bladeGeo, bladeMat);
+					// Offset each blade outward from the axis, then spin it around that
+					// axis: closing the iris is a single rotation of this group.
+					blade.position.set(Math.cos(angle) * 0.062, Math.sin(angle) * 0.062, 0);
+					blade.rotation.z = angle + Math.PI / 2;
+					blades.add(blade);
+				}
+
+				const sensor = new THREE.Mesh(sensorGeo, sensorMat);
+				sensor.position.set(lensSpec.x, y, 0.012);
+
+				this.layers.camera.add(barrel, ring, lens, blades, sensor);
+				this.lensRigs.push({
+					name: lensSpec.name,
+					element: lens,
+					blades,
+					// Staggered phase, so the four modules never focus in unison.
+					phase: this.lensRigs.length * 1.7
+				});
 			} else {
 				const sensor = new THREE.Mesh(tofGeo, lensMat);
 				sensor.position.set(lensSpec.x, y, 0.055);
@@ -667,6 +720,7 @@ export class PhoneSceneEngine {
 		});
 		this.layers.board.add(new THREE.Mesh(boardGeo, this.shaderMaterials.boardShader));
 		this.disposeLater(boardGeo, this.shaderMaterials.boardShader);
+		this.buildBoardTraces(boardWidth, boardHeight);
 
 		// Real silicon on the board: the NPU die plus its supporting packages.
 		const chipMat = new THREE.MeshPhysicalMaterial({
@@ -782,6 +836,26 @@ export class PhoneSceneEngine {
 	 */
 	buildRailDetails(railMat, env) {
 		const matrix = new THREE.Matrix4();
+
+		// Microphone and noise-cancelling perforations. Tiny, but their absence is
+		// why featureless rails read as a CAD preview.
+		const slots = createMicSlotLayout();
+		const slotGeo = new THREE.CylinderGeometry(1, 1, PHONE.depth * 0.9, 10);
+		const slotMat = new THREE.MeshStandardMaterial({
+			color: 0x04050a,
+			metalness: 0.2,
+			roughness: 0.95
+		});
+		const mics = new THREE.InstancedMesh(slotGeo, slotMat, slots.length);
+		slots.forEach((slot, index) => {
+			matrix.makeRotationX(Math.PI / 2);
+			matrix.scale(new THREE.Vector3(slot.radius, 1, slot.radius));
+			matrix.setPosition(slot.x, slot.y, 0);
+			mics.setMatrixAt(index, matrix);
+		});
+		mics.instanceMatrix.needsUpdate = true;
+		this.layers.frame.add(mics);
+		this.disposeLater(slotGeo, slotMat);
 
 		// Speaker grille: real drilled holes along the bottom edge.
 		const holes = createGrilleLayout();
@@ -1111,6 +1185,7 @@ export class PhoneSceneEngine {
 		}
 
 		this.updateHotspots();
+		this.animateComponentDetail(elapsed);
 		this.options.onHotspots?.(this.hotspots);
 		// The lying-flat reference body only makes sense while the stack is apart.
 		if (this.ghostPhone) this.ghostPhone.visible = this.explodedGroup.visible;
@@ -1222,6 +1297,140 @@ export class PhoneSceneEngine {
 			mesh.castShadow = !first?.transparent;
 			mesh.receiveShadow = true;
 		});
+	}
+
+	/**
+	 * Everything punched through the front glass: the selfie-camera hole with its
+	 * metal collar and coated element, and the earpiece slot above it. A phone
+	 * front with no interruptions reads as a mock-up, not a device.
+	 *
+	 * @param {number} width
+	 * @param {number} height
+	 * @param {number} env
+	 */
+	buildDisplayCutouts(width, height, env) {
+		const collarMat = new THREE.MeshPhysicalMaterial({
+			color: 0x0a0b0e,
+			metalness: 0.8,
+			roughness: 0.3,
+			envMapIntensity: 1.4 * env
+		});
+		const glassMat = new THREE.MeshPhysicalMaterial({
+			color: 0x060d14,
+			metalness: 0.3,
+			roughness: 0.05,
+			clearcoat: 1,
+			iridescence: 0.7,
+			iridescenceIOR: 1.8,
+			iridescenceThicknessRange: [200, 600],
+			envMapIntensity: 2 * env
+		});
+		this.disposeLater(collarMat, glassMat);
+
+		for (const cutout of createPunchHoleLayout()) {
+			if (cutout.radius) {
+				const holeGeo = new THREE.CylinderGeometry(cutout.radius, cutout.radius, 0.022, 28);
+				const hole = new THREE.Mesh(holeGeo, collarMat);
+				hole.rotation.x = Math.PI / 2;
+				hole.position.set(cutout.x, cutout.y, 0.006);
+
+				const elementGeo = new THREE.SphereGeometry(cutout.radius * 0.78, 24, 16);
+				const element = new THREE.Mesh(elementGeo, glassMat);
+				element.scale.z = 0.4;
+				element.position.set(cutout.x, cutout.y, 0.014);
+
+				this.layers.display.add(hole, element);
+				this.disposeLater(holeGeo, elementGeo);
+			} else {
+				const slotGeo = createSlabGeometry({
+					width: cutout.width ?? 0.2,
+					height: cutout.height ?? 0.018,
+					depth: 0.014,
+					radius: (cutout.height ?? 0.018) / 2
+				});
+				const slot = new THREE.Mesh(slotGeo, collarMat);
+				slot.position.set(cutout.x, cutout.y, 0.008);
+				this.layers.display.add(slot);
+				this.disposeLater(slotGeo);
+			}
+		}
+	}
+
+	/**
+	 * Copper traces on the logic board, as one instanced mesh. The board shader
+	 * already paints a trace pattern, but painted traces stay flat under a moving
+	 * light; these have real height, so they catch the rim light edge-on.
+	 *
+	 * @param {number} boardWidth
+	 * @param {number} boardHeight
+	 */
+	buildBoardTraces(boardWidth, boardHeight) {
+		const traces = createPcbTraceLayout({ count: this.budget.tier === 'low' ? 12 : 26 });
+		const geometry = new THREE.BoxGeometry(1, 1, 0.004);
+		const material = new THREE.MeshPhysicalMaterial({
+			color: 0xc08b3a,
+			metalness: 1,
+			roughness: 0.32,
+			emissive: new THREE.Color(0x2a1a04),
+			emissiveIntensity: 0.5
+		});
+		const mesh = new THREE.InstancedMesh(geometry, material, traces.length);
+		const matrix = new THREE.Matrix4();
+		const scale = new THREE.Vector3();
+
+		traces.forEach((trace, index) => {
+			const long = trace.length * (trace.vertical ? boardHeight : boardWidth);
+			scale.set(trace.vertical ? 0.008 : long, trace.vertical ? long : 0.008, 1);
+			matrix.identity();
+			matrix.scale(scale);
+			matrix.setPosition(trace.x * boardWidth * 0.5, trace.y * boardHeight * 0.5, 0.011);
+			mesh.setMatrixAt(index, matrix);
+		});
+		mesh.instanceMatrix.needsUpdate = true;
+		this.boardTraceMat = material;
+		this.layers.board.add(mesh);
+		this.disposeLater(geometry, material);
+	}
+
+	/**
+	 * The deep animation layer: motion at the level of individual components,
+	 * running underneath the scroll choreography.
+	 *
+	 * Big camera moves are what people notice first, but what makes a scene feel
+	 * alive is the small stuff that never stops — lenses hunting for focus,
+	 * an iris breathing, current pulsing through copper. All of it is amplitude
+	 * scaled, so reduced-motion visitors get a still, readable device.
+	 *
+	 * @param {number} elapsed seconds since start
+	 */
+	animateComponentDetail(elapsed) {
+		const amplitude = this.reducedMotion ? 0 : 1;
+
+		// Autofocus: the front element travels a fraction of a millimetre, then
+		// settles. Sped up and exaggerated, this is the "hunting" you see when a
+		// real camera locks on.
+		for (const rig of this.lensRigs ?? []) {
+			const hunt = Math.sin(elapsed * 1.3 + rig.phase);
+			rig.element.position.z = 0.07 + hunt * 0.004 * amplitude;
+			// Iris: slow open/close, offset from the focus cycle so the two motions
+			// never look mechanically linked.
+			const iris = 0.5 + 0.5 * Math.sin(elapsed * 0.6 + rig.phase * 0.5);
+			rig.blades.rotation.z = iris * 0.42 * amplitude;
+			rig.blades.scale.setScalar(1 - iris * 0.12 * amplitude);
+		}
+
+		// Current through the copper: a slow emissive swell rather than a blink,
+		// because a blinking board looks like a warning light.
+		if (this.boardTraceMat) {
+			this.boardTraceMat.emissiveIntensity =
+				0.5 + (0.35 + 0.35 * Math.sin(elapsed * 2.1)) * amplitude;
+		}
+
+		// NPU die heat: brighter while the compute chapter is on screen.
+		if (this.npuMat) {
+			const load = 0.35 + 0.5 * Math.max(0, Math.sin(elapsed * 1.8)) * amplitude;
+			this.npuMat.emissiveIntensity = this.explodedGroup.visible ? load : 0.35;
+		}
 	}
 
 	destroy() {
