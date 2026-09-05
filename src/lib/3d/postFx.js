@@ -70,12 +70,37 @@ export function createGradeShader() {
 }
 
 /**
+ * Decide the pass order for a budget, as plain data. Keeping this pure means
+ * the ordering contract (occlusion before bloom, grade before output, output
+ * always last) is unit-testable without a GPU.
+ *
+ * @param {{ ssao?: boolean, bloom?: boolean, dof?: boolean, grade?: boolean }} budget
+ * @returns {string[]}
+ */
+export function resolvePassPlan(budget = {}) {
+	const plan = ['render'];
+	// Ambient occlusion reads scene depth, so it must run before anything that
+	// blurs or tints the buffer.
+	if (budget.ssao) plan.push('ssao');
+	// Depth of field also needs untouched depth, but must come after AO so the
+	// contact shadows are blurred together with the geometry they sit on.
+	if (budget.dof) plan.push('dof');
+	if (budget.bloom) plan.push('bloom');
+	if (budget.grade) plan.push('grade');
+	plan.push('output');
+	return plan;
+}
+
+/**
  * @typedef {object} PostChain
  * @property {import('three/examples/jsm/postprocessing/EffectComposer.js').EffectComposer} composer
  * @property {import('three/examples/jsm/postprocessing/UnrealBloomPass.js').UnrealBloomPass | null} bloom
- * @property {import('three/examples/jsm/postprocessing/ShaderPass.js').ShaderPass | null} grade
+ * @property {import('three/examples/jsm/postprocessing/ShaderPass.js').ShaderPass | null} [grade]
+ * @property {any} [ssao]
+ * @property {any} [dof]
+ * @property {string[]} [plan]
  * @property {(width: number, height: number) => void} setSize
- * @property {(elapsed: number) => void} update
+ * @property {(elapsed: number, focusDistance?: number) => void} update
  * @property {() => void} dispose
  */
 
@@ -88,7 +113,7 @@ export function createGradeShader() {
  * @param {THREE.Camera} args.camera
  * @param {number} args.width
  * @param {number} args.height
- * @param {{ bloom: boolean, grade: boolean }} args.budget
+ * @param {{ bloom: boolean, grade: boolean, ssao?: boolean, dof?: boolean }} args.budget
  * @returns {Promise<PostChain>}
  */
 export async function createPostChain({ renderer, scene, camera, width, height, budget }) {
@@ -100,6 +125,36 @@ export async function createPostChain({ renderer, scene, camera, width, height, 
 
 	const composer = new EffectComposer(renderer);
 	composer.addPass(new RenderPass(scene, camera));
+
+	// --- Ambient occlusion -------------------------------------------------
+	// Without contact shadows a phone floats above its own reflection; SAO adds
+	// the dark seam where the frame meets the glass and where parts meet in the
+	// exploded view, which is most of what reads as "rendered by a studio".
+	/** @type {any} */
+	let ssao = null;
+	if (budget.ssao) {
+		const { SAOPass } = await import('three/examples/jsm/postprocessing/SAOPass.js');
+		ssao = new SAOPass(scene, camera);
+		ssao.params.saoBias = 0.35;
+		ssao.params.saoIntensity = 0.012;
+		ssao.params.saoScale = 6;
+		ssao.params.saoKernelRadius = 24;
+		ssao.params.saoBlur = true;
+		ssao.params.saoBlurRadius = 8;
+		ssao.params.saoBlurStdDev = 4;
+		composer.addPass(ssao);
+	}
+
+	// --- Depth of field ----------------------------------------------------
+	// Focus distance is driven per frame from the camera-to-target distance, so
+	// the device stays sharp while the background particles melt away.
+	/** @type {any} */
+	let dof = null;
+	if (budget.dof) {
+		const { BokehPass } = await import('three/examples/jsm/postprocessing/BokehPass.js');
+		dof = new BokehPass(scene, camera, { focus: 8, aperture: 0.00018, maxblur: 0.006 });
+		composer.addPass(dof);
+	}
 
 	/** @type {any} */
 	let bloom = null;
@@ -127,16 +182,28 @@ export async function createPostChain({ renderer, scene, camera, width, height, 
 		composer,
 		bloom,
 		grade,
+		ssao,
+		dof,
+		plan: resolvePassPlan(budget),
 		setSize(w, h) {
 			composer.setSize(w, h);
 			bloom?.setSize(w, h);
+			ssao?.setSize?.(w, h);
+			dof?.setSize?.(w, h);
 		},
-		update(elapsed) {
+		update(elapsed, focusDistance = 0) {
 			if (grade) grade.uniforms.uTime.value = elapsed;
+			// Keep the plane of focus glued to whatever the rig is looking at.
+			if (dof && focusDistance > 0) {
+				const uniforms = dof.uniforms ?? dof.materialBokeh?.uniforms;
+				if (uniforms?.focus) uniforms.focus.value = focusDistance;
+			}
 		},
 		dispose() {
 			bloom?.dispose?.();
 			grade?.dispose?.();
+			ssao?.dispose?.();
+			dof?.dispose?.();
 			composer.dispose?.();
 		}
 	};

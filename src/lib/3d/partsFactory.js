@@ -250,3 +250,102 @@ export function createFlexCableGeometry(options = {}) {
 	const curve = new THREE.CatmullRomCurve3([start, middle, end], false, 'catmullrom', 0.5);
 	return new THREE.TubeGeometry(curve, Math.max(4, segments), Math.max(radius, 1e-4), 8, false);
 }
+
+/**
+ * Side buttons, as CAD-style placements on the titanium rail.
+ *
+ * A real device has a power key with a knurled edge on one side and a two-piece
+ * volume rocker on the other, both sunk into the rail with a visible seam. The
+ * measurements below are the ones a mechanical drawing would carry: position
+ * along the height, length, and how far the key stands off the rail.
+ *
+ * @param {{ height?: number, width?: number }} [options]
+ * @returns {Array<{ name: string, side: 'left' | 'right', y: number, length: number, thickness: number, standoff: number, knurled: boolean }>}
+ */
+export function createButtonLayout(options = {}) {
+	const { height = PHONE.height, width = PHONE.width } = options;
+	const standoff = width * 0.012;
+
+	return [
+		{
+			name: 'power',
+			side: 'right',
+			y: height * 0.14,
+			length: height * 0.09,
+			thickness: PHONE.depth * 0.42,
+			standoff,
+			knurled: true
+		},
+		{
+			name: 'volume-up',
+			side: 'left',
+			y: height * 0.2,
+			length: height * 0.07,
+			thickness: PHONE.depth * 0.38,
+			standoff,
+			knurled: false
+		},
+		{
+			name: 'volume-down',
+			side: 'left',
+			y: height * 0.11,
+			length: height * 0.07,
+			thickness: PHONE.depth * 0.38,
+			standoff,
+			knurled: false
+		}
+	];
+}
+
+/**
+ * USB-C receptacle: a rounded slot on the bottom rail. Returned as a shape so
+ * the caller can extrude it and subtract it, or render it as an inset plate.
+ *
+ * @param {{ width?: number, height?: number }} [options]
+ * @returns {{ shape: THREE.Shape, width: number, height: number, y: number }}
+ */
+export function createPortShape(options = {}) {
+	const { width = PHONE.width * 0.21, height = PHONE.depth * 0.34 } = options;
+	return {
+		shape: roundedRectShape(width, height, Math.min(width, height) / 2),
+		width,
+		height,
+		y: -PHONE.height / 2
+	};
+}
+
+/**
+ * The raised camera deck. Real flagships do not put lenses on the back panel:
+ * there is a milled plateau with a chamfered wall, and the lens barrels sit on
+ * top of it. Without the plateau the optics look painted on.
+ *
+ * @param {{ width?: number, height?: number, rise?: number, chamfer?: number }} [options]
+ */
+export function createCameraPlateau(options = {}) {
+	const {
+		width = PHONE.width * 0.62,
+		height = PHONE.width * 0.62,
+		rise = PHONE.depth * 0.55,
+		chamfer = 0.012
+	} = options;
+
+	const geometry = new THREE.ExtrudeGeometry(
+		roundedRectShape(width - chamfer * 2, height - chamfer * 2, Math.min(width, height) * 0.28),
+		{
+			depth: Math.max(rise - chamfer, 1e-4),
+			bevelEnabled: true,
+			bevelThickness: chamfer,
+			bevelSize: chamfer,
+			bevelSegments: 3,
+			curveSegments: 24
+		}
+	);
+	geometry.center();
+	normaliseUv(geometry);
+
+	return {
+		geometry,
+		offset: { x: -PHONE.width * 0.14, y: PHONE.height * 0.3 },
+		rise
+	};
+}

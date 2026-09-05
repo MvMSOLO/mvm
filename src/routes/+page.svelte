@@ -10,6 +10,8 @@
 	import Configurator from '$lib/components/Configurator.svelte';
 	import Gallery from '$lib/components/Gallery.svelte';
 	import Hotspots from '$lib/components/Hotspots.svelte';
+	import ArLaunch from '$lib/components/ArLaunch.svelte';
+	import { initLocale, tr } from '$lib/i18n/store.js';
 
 	/** @type {HTMLElement | undefined} */
 	let canvasContainer;
@@ -56,7 +58,16 @@
 		engine?.setMaterialFinish(hex);
 	}
 
+	let arMode = $state(/** @type {string | null} */ (null));
+
+	/** Hand the live scene to the platform AR viewer. */
+	async function launchAr() {
+		if (!engine) return { launched: false, mode: arMode };
+		return engine.enterAr();
+	}
+
 	onMount(() => {
+		initLocale();
 		const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		webglSupported = detectWebGL();
 
@@ -81,8 +92,8 @@
 				loadFailed = true;
 			}
 		});
+		arMode = engine.arMode();
 
-		// Hard ceiling: never trap the user behind the loader.
 		const bailout = setTimeout(() => {
 			loadPercent = 100;
 			loading = false;
@@ -192,8 +203,11 @@
 				{#if index === 0}
 					<div class="hero-meta">
 						<span class="mono">01 / 0{CHAPTERS.length}</span>
-						<span class="mono">SCROLL TO EXPLORE</span>
+						<span class="mono">{$tr('scroll.hint')}</span>
 						<span class="scroll-line" aria-hidden="true"></span>
+					</div>
+					<div class="hero-ar">
+						<ArLaunch mode={arMode} launch={launchAr} />
 					</div>
 				{/if}
 			</section>
@@ -292,6 +306,10 @@
 
 	.chapter.right .body {
 		margin-left: auto;
+	}
+
+	.hero-ar {
+		margin-top: 1.4rem;
 	}
 
 	.hero-meta {

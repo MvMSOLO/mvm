@@ -20,6 +20,9 @@
  * @property {boolean} postFx         Load the post-processing chain at all.
  * @property {boolean} bloom
  * @property {boolean} grade           Grain / vignette / chromatic aberration.
+ * @property {boolean} ssao            Screen-space ambient occlusion (contact shadows).
+ * @property {boolean} dof             Depth of field (cinematic focus falloff).
+ * @property {boolean} ktx2            Prefer GPU-compressed (KTX2/Basis) textures.
  * @property {number} maxFps           Frame pacing cap (0 = uncapped).
  * @property {number} particles        Particle count multiplier.
  * @property {number} curveSegments    Geometry smoothness multiplier.
@@ -33,6 +36,9 @@ export const BUDGETS = {
 		postFx: false,
 		bloom: false,
 		grade: false,
+		ssao: false,
+		dof: false,
+		ktx2: true,
 		maxFps: 30,
 		particles: 0.25,
 		curveSegments: 0.5,
@@ -43,6 +49,9 @@ export const BUDGETS = {
 		postFx: true,
 		bloom: true,
 		grade: false,
+		ssao: true,
+		dof: false,
+		ktx2: true,
 		maxFps: 60,
 		particles: 0.6,
 		curveSegments: 1,
@@ -53,6 +62,9 @@ export const BUDGETS = {
 		postFx: true,
 		bloom: true,
 		grade: true,
+		ssao: true,
+		dof: true,
+		ktx2: true,
 		maxFps: 0,
 		particles: 1,
 		curveSegments: 1.5,

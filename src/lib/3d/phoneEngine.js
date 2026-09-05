@@ -3,6 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { createPostChain } from './postFx.js';
+import { attachDecoders, modelUrl } from './assetLoaders.js';
+import { detectArMode, launchAr } from './ar.js';
 import { detectTier, collectSignals, adaptTier, budgetFor } from './qualityTier.js';
 import { CinematicRig } from './CinematicRig.js';
 import { ParticleSystem } from './ParticleSystem.js';
@@ -18,6 +20,9 @@ import {
 	createGrilleLayout,
 	createScrewLayout,
 	createAntennaLines,
+	createButtonLayout,
+	createPortShape,
+	createCameraPlateau,
 	createFlexCableGeometry
 } from './partsFactory.js';
 import { directScene } from './scenes/sceneManager.js';
@@ -113,6 +118,10 @@ export class PhoneSceneEngine {
 
 		this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
 		this.rig = new CinematicRig(this.camera);
+		/** Resolved URL of the model actually being loaded. @type {string} */
+		this.modelUrl = '';
+		/** Lazily created asset decoders. @type {{ ktx2: any, draco: any } | null} */
+		this.decoders = null;
 
 		// Scratch objects for the per-frame subject measurement (no allocations
 		// inside the render loop).
@@ -240,7 +249,12 @@ export class PhoneSceneEngine {
 			camera: this.camera,
 			width,
 			height,
-			budget: { bloom: this.budget.bloom, grade: this.budget.grade }
+			budget: {
+				bloom: this.budget.bloom,
+				grade: this.budget.grade,
+				ssao: this.budget.ssao,
+				dof: this.budget.dof
+			}
 		})
 			.then((chain) => {
 				if (this.disposed) {
@@ -307,11 +321,38 @@ export class PhoneSceneEngine {
 
 	loadBaseModel() {
 		const loader = new GLTFLoader();
+		const base = import.meta.env.BASE_URL ?? '/';
 		// The shipped GLB is meshopt-compressed and quantised (EXT_meshopt_compression
-		// + KHR_mesh_quantization), which cuts it from ~53 MB to ~1.6 MB.
-		loader.setMeshoptDecoder(MeshoptDecoder);
+		// + KHR_mesh_quantization), which cuts it from ~53 MB to ~1.6 MB. On top of
+		// that, when the build produced a KTX2/Basis variant we load that instead:
+		// GPU-compressed textures stay compressed in VRAM.
+		const wantsKtx2 = Boolean(this.budget.ktx2);
+		const hasKtx2Model = import.meta.env.VITE_KTX2_MODEL === 'true';
+		this.modelUrl = modelUrl({ ktx2: wantsKtx2, hasKtx2Model, base });
+
+		attachDecoders({
+			loader,
+			meshoptDecoder: MeshoptDecoder,
+			renderer: this.renderer,
+			base,
+			ktx2: wantsKtx2 && hasKtx2Model
+		}).then((decoders) => {
+			this.decoders = decoders;
+			if (this.disposed) {
+				decoders.ktx2?.dispose?.();
+				return;
+			}
+			this.loadModelFile(loader, this.modelUrl);
+		});
+	}
+
+	/**
+	 * @param {GLTFLoader} loader
+	 * @param {string} url
+	 */
+	loadModelFile(loader, url) {
 		loader.load(
-			`${import.meta.env.BASE_URL ?? '/'}models/nova_one.glb`.replace('//models', '/models'),
+			url,
 			(gltf) => {
 				if (this.disposed) return;
 				const model = configurePhoneModel(gltf.scene);
@@ -516,6 +557,22 @@ export class PhoneSceneEngine {
 			envMapIntensity: 2.2 * env
 		});
 		this.disposeLater(barrelGeo, ringGeo, lensGeo, tofGeo, barrelMat, lensMat);
+
+		// Milled camera plateau. Real flagships raise the module on a chamfered
+		// deck; lenses sitting flush on the back panel always look painted on.
+		const plateau = createCameraPlateau();
+		const plateauMat = new THREE.MeshPhysicalMaterial({
+			color: 0x3c4048,
+			metalness: 1,
+			roughness: 0.24,
+			clearcoat: 0.4,
+			clearcoatRoughness: 0.18,
+			envMapIntensity: 2 * env
+		});
+		const plateauMesh = new THREE.Mesh(plateau.geometry, plateauMat);
+		plateauMesh.position.set(plateau.offset.x, height * 0.28, plateau.rise * 0.5);
+		this.layers.camera.add(plateauMesh);
+		this.disposeLater(plateau.geometry, plateauMat);
 
 		// Penta array: four full barrels plus a smaller time-of-flight sensor.
 		for (const lensSpec of createLensLayout()) {
@@ -743,6 +800,41 @@ export class PhoneSceneEngine {
 		screwMesh.instanceMatrix.needsUpdate = true;
 		this.layers.frame.add(screwMesh);
 		this.disposeLater(screwGeo, screwMat);
+
+		// Side keys. A rocker sunk into the rail with a chamfered edge, plus a
+		// knurled power key: the two details every reviewer photographs.
+		for (const button of createButtonLayout()) {
+			const keyGeo = new THREE.BoxGeometry(button.standoff * 2, button.length, button.thickness);
+			const keyMat = new THREE.MeshPhysicalMaterial({
+				color: button.knurled ? 0x9aa0aa : 0x7d828c,
+				metalness: 1,
+				roughness: button.knurled ? 0.42 : 0.26,
+				envMapIntensity: 1.9 * env
+			});
+			const key = new THREE.Mesh(keyGeo, keyMat);
+			const side = button.side === 'right' ? 1 : -1;
+			key.position.set(side * (PHONE.width / 2 + button.standoff * 0.4), button.y, 0);
+			this.layers.frame.add(key);
+			this.disposeLater(keyGeo, keyMat);
+		}
+
+		// USB-C receptacle on the bottom rail: a dark rounded slot, inset.
+		const port = createPortShape();
+		const portGeo = new THREE.ExtrudeGeometry(port.shape, {
+			depth: PHONE.depth * 0.5,
+			bevelEnabled: false,
+			curveSegments: 16
+		});
+		const portMat = new THREE.MeshStandardMaterial({
+			color: 0x04050a,
+			metalness: 0.55,
+			roughness: 0.55
+		});
+		const portMesh = new THREE.Mesh(portGeo, portMat);
+		portMesh.rotation.x = Math.PI / 2;
+		portMesh.position.set(0, port.y + port.height * 0.1, 0);
+		this.layers.frame.add(portMesh);
+		this.disposeLater(portGeo, portMat);
 
 		// Antenna break lines: thin insulating bands interrupting the metal.
 		const bandGeo = new THREE.BoxGeometry(PHONE.width + 0.004, 0.012, PHONE.depth * 0.92);
@@ -1007,15 +1099,49 @@ export class PhoneSceneEngine {
 
 		this.monitorPerformance(delta);
 		if (this.post) {
-			this.post.update(elapsed);
+			this.post.update(elapsed, this.camera.position.distanceTo(this.rig.currentLookAt));
 			this.post.composer.render(delta);
 		} else {
 			this.renderer.render(this.scene, this.camera);
 		}
 	}
 
+	/**
+	 * Which AR route this device can take, or null when it cannot do AR.
+	 * @returns {import('./ar.js').ArMode}
+	 */
+	arMode() {
+		if (typeof navigator === 'undefined') return null;
+		return detectArMode({
+			userAgent: navigator.userAgent ?? '',
+			webxr: Boolean(/** @type {any} */ (navigator).xr),
+			maxTouchPoints: navigator.maxTouchPoints ?? 0
+		});
+	}
+
+	/**
+	 * Hand the assembled device over to the platform's AR viewer. iOS gets a USDZ
+	 * exported from the live scene, so it carries the finish the visitor picked;
+	 * Android gets the GLB through Scene Viewer.
+	 * @returns {Promise<{ launched: boolean, mode: import('./ar.js').ArMode, url?: string }>}
+	 */
+	async enterAr() {
+		const mode = this.arMode();
+		if (!mode) return { launched: false, mode };
+		const absolute =
+			typeof window === 'undefined'
+				? this.modelUrl
+				: new URL(this.modelUrl ?? '/models/nova_one.glb', window.location.href).href;
+		return launchAr({
+			mode: mode === 'webxr' ? 'scene-viewer' : mode,
+			getScene: () => this.basePhoneGroup,
+			modelUrl: absolute
+		});
+	}
+
 	destroy() {
 		this.disposed = true;
+		this.decoders?.ktx2?.dispose?.();
 		cancelAnimationFrame(this.reqId);
 
 		window.removeEventListener('resize', this.onWindowResize);

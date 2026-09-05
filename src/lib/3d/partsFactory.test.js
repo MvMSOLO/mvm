@@ -12,6 +12,9 @@ import {
 	createScrewLayout,
 	createAntennaLines,
 	createFlexCableGeometry,
+	createButtonLayout,
+	createPortShape,
+	createCameraPlateau,
 	normaliseUv
 } from './partsFactory.js';
 
@@ -219,5 +222,60 @@ describe('normaliseUv', () => {
 	it('is a no-op for geometry without UVs', () => {
 		const geometry = new THREE.BufferGeometry();
 		expect(() => normaliseUv(geometry)).not.toThrow();
+	});
+});
+
+describe('createButtonLayout', () => {
+	it('puts power opposite the volume rocker, as on a real chassis', () => {
+		const buttons = createButtonLayout();
+		const power = buttons.find((b) => b.name === 'power');
+		const volume = buttons.filter((b) => b.name.startsWith('volume'));
+		expect(power?.side).toBe('right');
+		expect(volume).toHaveLength(2);
+		expect(volume.every((b) => b.side === 'left')).toBe(true);
+	});
+
+	it('knurls only the power key and keeps every key inside the rail', () => {
+		const buttons = createButtonLayout();
+		expect(buttons.filter((b) => b.knurled)).toHaveLength(1);
+		for (const button of buttons) {
+			expect(Math.abs(button.y) + button.length / 2).toBeLessThan(PHONE.height / 2);
+			expect(button.standoff).toBeGreaterThan(0);
+		}
+	});
+
+	it('scales with the chassis it is given', () => {
+		const big = createButtonLayout({ height: 4, width: 2 });
+		expect(big[0].y).toBeCloseTo(4 * 0.14, 6);
+	});
+});
+
+describe('createPortShape', () => {
+	it('is a fully rounded slot on the bottom edge', () => {
+		const port = createPortShape();
+		const points = port.shape.getPoints(8);
+		expect(points.length).toBeGreaterThan(8);
+		expect(port.y).toBeCloseTo(-PHONE.height / 2, 6);
+		expect(port.width).toBeGreaterThan(port.height);
+	});
+});
+
+describe('createCameraPlateau', () => {
+	it('is a chamfered deck that stands off the back panel', () => {
+		const plateau = createCameraPlateau();
+		expect(plateau.rise).toBeGreaterThan(0);
+		plateau.geometry.computeBoundingBox();
+		const box = plateau.geometry.boundingBox;
+		expect(box).toBeTruthy();
+		const size = box.getSize(new THREE.Vector3());
+		expect(size.z).toBeGreaterThan(0);
+		expect(size.x).toBeLessThan(PHONE.width);
+		expect(plateau.geometry.attributes.uv).toBeTruthy();
+	});
+
+	it('sits in the upper-left quadrant, where the module belongs', () => {
+		const { offset } = createCameraPlateau();
+		expect(offset.x).toBeLessThan(0);
+		expect(offset.y).toBeGreaterThan(0);
 	});
 });

@@ -1,5 +1,7 @@
 <script>
 	import { CHAPTERS } from '$lib/data/product.js';
+	import LocaleSwitcher from './LocaleSwitcher.svelte';
+	import { tr } from '$lib/i18n/store.js';
 
 	/** @type {{ activeId?: string, onJump?: (id: string) => void }} */
 	let { activeId = '', onJump } = $props();
@@ -57,7 +59,8 @@
 					{link.rail}
 				</button>
 			{/each}
-			<a class="cta" href="#configurator">PRE-ORDER</a>
+			<LocaleSwitcher />
+			<a class="cta" href="#configurator">{$tr('cta.preorder')}</a>
 		</nav>
 
 		<button
