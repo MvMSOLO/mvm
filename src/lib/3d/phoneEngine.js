@@ -4,6 +4,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { createPostChain } from './postFx.js';
 import { attachDecoders, modelUrl } from './assetLoaders.js';
+import { brushedMetalRoughness, glassSmudge, oledSubpixelGrid, toDataTexture } from './textures.js';
 import { detectArMode, launchAr } from './ar.js';
 import { detectTier, collectSignals, adaptTier, budgetFor } from './qualityTier.js';
 import { CinematicRig } from './CinematicRig.js';
@@ -149,8 +150,10 @@ export class PhoneSceneEngine {
 		this.basePixelRatio = Math.min(window.devicePixelRatio || 1, this.budget.pixelRatio);
 		this.pixelRatio = this.basePixelRatio;
 		this.renderer.setPixelRatio(this.pixelRatio);
-		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		this.renderer.toneMappingExposure = 1.25;
+		// AgX keeps saturated accents (the cyan UI glow) from clipping to white the
+		// way ACES does, and rolls highlights off closer to a real camera sensor.
+		this.renderer.toneMapping = THREE.AgXToneMapping;
+		this.renderer.toneMappingExposure = 1.35;
 		this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 		container.appendChild(this.renderer.domElement);
 		this.renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -214,6 +217,7 @@ export class PhoneSceneEngine {
 		this.rimLight = lights.rimLight;
 
 		this.buildProceduralExplodedLayers();
+		this.initShadows(this.keyLight);
 		this.loadBaseModel();
 		this.bindEvents();
 
@@ -359,6 +363,10 @@ export class PhoneSceneEngine {
 				model.traverse((child) => {
 					if (!(/** @type {THREE.Mesh} */ (child).isMesh)) return;
 					const mesh = /** @type {THREE.Mesh} */ (child);
+					if (this.budget.shadows) {
+						mesh.castShadow = true;
+						mesh.receiveShadow = true;
+					}
 					const source = /** @type {THREE.MeshStandardMaterial} */ (
 						Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
 					);
@@ -428,6 +436,7 @@ export class PhoneSceneEngine {
 		const width = PHONE.width;
 		const height = PHONE.height;
 		const env = this.budget.envIntensity;
+		const micro = this.microDetail();
 
 		// 01 — sapphire glass (rounded, with real thickness so the edge catches light)
 		const glassGeo = createSlabGeometry({ depth: 0.014 });
@@ -441,6 +450,11 @@ export class PhoneSceneEngine {
 			thickness: 0.4,
 			clearcoat: 1,
 			clearcoatRoughness: 0.06,
+			// Fingerprint oil and dust. Perfectly clean glass is the single most
+			// obvious tell that an image was rendered rather than photographed.
+			clearcoatRoughnessMap: micro.smudge,
+			sheen: 0.3,
+			sheenRoughness: 0.25,
 			specularIntensity: 1,
 			transparent: true,
 			opacity: 0.4,
@@ -455,7 +469,9 @@ export class PhoneSceneEngine {
 			uniforms: {
 				uTime: { value: 0 },
 				uScroll: { value: 0 },
-				uAccent: { value: new THREE.Color(0x00f0ff) }
+				uAccent: { value: new THREE.Color(0x00f0ff) },
+				uSubpixel: { value: micro.subpixel },
+				uHasSubpixel: { value: micro.subpixel ? 1 : 0 }
 			},
 			vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -484,7 +500,7 @@ export class PhoneSceneEngine {
           vec2 c = vUv - 0.5;
           float vignette = 1.0 - smoothstep(0.35, 0.72, length(c));
 
-          vec3 color = bg + sweep * uAccent * 0.9 + grid;
+          vec3 color = (bg + sweep * uAccent * 0.9 + grid) * subpixel;
           gl_FragColor = vec4(color * vignette, 0.94);
         }
       `,
@@ -510,6 +526,9 @@ export class PhoneSceneEngine {
 			// property is most of the difference between "metal" and "grey plastic".
 			anisotropy: 0.65,
 			anisotropyRotation: Math.PI / 2,
+			// Micro-scratches from the polishing wheel, so the highlight breaks up
+			// along the machining direction instead of sliding as a clean streak.
+			roughnessMap: micro.brushed,
 			envMapIntensity: 1.8 * env
 		});
 		this.layers.frame.add(new THREE.Mesh(frameGeo, frameMat));
@@ -1136,6 +1155,72 @@ export class PhoneSceneEngine {
 			mode: mode === 'webxr' ? 'scene-viewer' : mode,
 			getScene: () => this.basePhoneGroup,
 			modelUrl: absolute
+		});
+	}
+
+	/**
+	 * Procedural micro-detail maps, built once and shared by every material.
+	 * Skipped entirely on the low tier: three extra texture uploads are not worth
+	 * it on a device that is already fill-rate bound.
+	 *
+	 * @returns {{ brushed: THREE.Texture | null, smudge: THREE.Texture | null, subpixel: THREE.Texture | null }}
+	 */
+	microDetail() {
+		if (this.micro) return this.micro;
+		if (!this.budget.microDetail) {
+			this.micro = { brushed: null, smudge: null, subpixel: null };
+			return this.micro;
+		}
+
+		const size = this.budget.tier === 'high' ? 512 : 256;
+		const brushed = toDataTexture(brushedMetalRoughness({ size, base: 0.26, seed: 7 }), {
+			repeat: 2
+		});
+		const smudge = toDataTexture(glassSmudge({ size, smudges: 11, dust: size, seed: 21 }));
+		const subpixel = toDataTexture(oledSubpixelGrid({ cells: 96, cellSize: 4 }), {
+			repeat: 6,
+			srgb: true
+		});
+		this.disposeLater(brushed, smudge, subpixel);
+		this.micro = { brushed, smudge, subpixel };
+		return this.micro;
+	}
+
+	/**
+	 * Real shadow maps. The fake blob under the device sells the exploded view,
+	 * but only a depth-mapped key light puts the camera plateau's shadow on the
+	 * back panel and the rail's shadow on the glass.
+	 * @param {THREE.DirectionalLight} keyLight
+	 */
+	initShadows(keyLight) {
+		if (!this.budget.shadows || !this.budget.shadowMapSize) return;
+		this.renderer.shadowMap.enabled = true;
+		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+		keyLight.castShadow = true;
+		keyLight.shadow.mapSize.set(this.budget.shadowMapSize, this.budget.shadowMapSize);
+		// Tight frustum around a 2.5-unit device: a loose one wastes the whole map
+		// on empty space and produces the blocky shadows people blame on WebGL.
+		const extent = 3.2;
+		keyLight.shadow.camera.left = -extent;
+		keyLight.shadow.camera.right = extent;
+		keyLight.shadow.camera.top = extent;
+		keyLight.shadow.camera.bottom = -extent;
+		keyLight.shadow.camera.near = 0.5;
+		keyLight.shadow.camera.far = 18;
+		keyLight.shadow.bias = -0.0006;
+		keyLight.shadow.normalBias = 0.02;
+		keyLight.shadow.radius = 3;
+
+		this.mainGroup.traverse((child) => {
+			const mesh = /** @type {THREE.Mesh} */ (child);
+			if (!mesh.isMesh) return;
+			const material = /** @type {THREE.Material | THREE.Material[]} */ (mesh.material);
+			const first = Array.isArray(material) ? material[0] : material;
+			// Transparent parts (glass, the OLED sweep, glow planes) would otherwise
+			// throw an opaque black shadow, which looks worse than no shadow at all.
+			mesh.castShadow = !first?.transparent;
+			mesh.receiveShadow = true;
 		});
 	}
 

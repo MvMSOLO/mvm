@@ -23,6 +23,9 @@
  * @property {boolean} ssao            Screen-space ambient occlusion (contact shadows).
  * @property {boolean} dof             Depth of field (cinematic focus falloff).
  * @property {boolean} ktx2            Prefer GPU-compressed (KTX2/Basis) textures.
+ * @property {boolean} shadows         Real shadow maps (not just a fake blob).
+ * @property {number} shadowMapSize    Resolution of the key-light shadow map.
+ * @property {boolean} microDetail     Procedural micro-scratch / smudge maps.
  * @property {number} maxFps           Frame pacing cap (0 = uncapped).
  * @property {number} particles        Particle count multiplier.
  * @property {number} curveSegments    Geometry smoothness multiplier.
@@ -39,6 +42,9 @@ export const BUDGETS = {
 		ssao: false,
 		dof: false,
 		ktx2: true,
+		shadows: false,
+		shadowMapSize: 0,
+		microDetail: false,
 		maxFps: 30,
 		particles: 0.25,
 		curveSegments: 0.5,
@@ -52,6 +58,9 @@ export const BUDGETS = {
 		ssao: true,
 		dof: false,
 		ktx2: true,
+		shadows: true,
+		shadowMapSize: 1024,
+		microDetail: true,
 		maxFps: 60,
 		particles: 0.6,
 		curveSegments: 1,
@@ -65,6 +74,9 @@ export const BUDGETS = {
 		ssao: true,
 		dof: true,
 		ktx2: true,
+		shadows: true,
+		shadowMapSize: 2048,
+		microDetail: true,
 		maxFps: 0,
 		particles: 1,
 		curveSegments: 1.5,
