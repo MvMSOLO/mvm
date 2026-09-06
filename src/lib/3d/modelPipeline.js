@@ -13,33 +13,51 @@ export function setupEnvironmentAndMaterials(scene, renderer) {
 	pmremGenerator.compileEquirectangularShader();
 
 	const envScene = new THREE.Scene();
-	envScene.background = new THREE.Color(0x1a2030);
+	envScene.background = new THREE.Color(0x0a0d16);
 
 	/**
-	 * Large emissive planes act as studio softboxes in the reflection map.
+	 * Large emissive planes act as studio softboxes & dynamic reflection strips in the environment map.
 	 * @param {number} color
 	 * @param {number} intensity
 	 * @param {[number, number, number]} position
-	 * @param {number} size
+	 * @param {[number, number]} size
+	 * @param {[number, number, number]} [rotation]
 	 * @returns {[THREE.PlaneGeometry, THREE.MeshBasicMaterial]}
 	 */
-	const softbox = (color, intensity, position, size) => {
-		const geometry = new THREE.PlaneGeometry(size, size);
-		const material = new THREE.MeshBasicMaterial({ color, opacity: intensity, transparent: true });
+	const softbox = (color, intensity, position, size, rotation = [0, 0, 0]) => {
+		const geometry = new THREE.PlaneGeometry(size[0], size[1]);
+		const material = new THREE.MeshBasicMaterial({
+			color,
+			opacity: intensity,
+			transparent: true,
+			side: THREE.DoubleSide
+		});
 		const mesh = new THREE.Mesh(geometry, material);
 		mesh.position.set(position[0], position[1], position[2]);
-		mesh.lookAt(0, 0, 0);
+		if (rotation[0] || rotation[1] || rotation[2]) {
+			mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+		} else {
+			mesh.lookAt(0, 0, 0);
+		}
 		envScene.add(mesh);
 		return [geometry, material];
 	};
 
 	const trash = [
-		...softbox(0xffffff, 1, [0, 8, 4], 12),
-		...softbox(0x00f0ff, 0.7, [-8, -2, -4], 10),
-		...softbox(0xffffff, 0.5, [8, 0, -6], 10)
+		// Main key overhead light ring/box for edge highlights on titanium
+		...softbox(0xffffff, 1.2, [0, 10, 2], [14, 14]),
+		// Long vertical side softbox for sleek streak reflection down the chassis rail
+		...softbox(0xeaf4ff, 0.9, [-9, 0, 1], [3, 16], [0, Math.PI / 3, 0]),
+		...softbox(0xffffff, 0.8, [9, 0, 1], [3, 16], [0, -Math.PI / 3, 0]),
+		// Futuristic cyan studio rim light accent
+		...softbox(0x00f0ff, 0.85, [-6, -4, -5], [12, 10]),
+		// High-tech violet back bounce
+		...softbox(0xaa00ff, 0.5, [6, 5, -8], [10, 10]),
+		// Pure white center fill highlight
+		...softbox(0xffffff, 0.6, [0, -8, 6], [8, 8])
 	];
 
-	const renderTarget = pmremGenerator.fromScene(envScene, 0.04);
+	const renderTarget = pmremGenerator.fromScene(envScene, 0.02);
 	scene.environment = renderTarget.texture;
 
 	for (const item of trash) item.dispose();

@@ -12,6 +12,7 @@
 	import Gallery from '$lib/components/Gallery.svelte';
 	import Hotspots from '$lib/components/Hotspots.svelte';
 	import ArLaunch from '$lib/components/ArLaunch.svelte';
+	import TechHud from '$lib/components/TechHud.svelte';
 	import { initLocale, tr } from '$lib/i18n/store.js';
 
 	/** @type {HTMLElement | undefined} */
@@ -154,6 +155,7 @@
 <ProgressRail {progress} activeId={activeChapter.id} onJump={jumpTo} />
 {#if !loading}
 	<JourneyMap {progress} onJump={jumpTo} />
+	<TechHud activeChapterId={activeChapter.id} {progress} />
 {/if}
 
 <main id="main">
