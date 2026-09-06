@@ -16,8 +16,10 @@
 	--fg: #ffffff;
 	--fg-dim: #8a8f99;
 	--fg-faint: #555b66;
-	--line: rgba(255, 255, 255, 0.08);
+	--line: rgba(255, 255, 255, 0.1);
+	--line-glow: rgba(0, 240, 255, 0.3);
 	--accent: #00f0ff;
+	--accent-glow: rgba(0, 240, 255, 0.4);
 
 	--font-display: 'Syne', 'Space Grotesk', system-ui, sans-serif;
 	--font-mono: 'Space Grotesk', ui-monospace, monospace;
@@ -35,7 +37,7 @@
 
 	--gutter: clamp(1.25rem, 5vw, 6rem);
 	--shell: 1440px;
-	--radius: 2px;
+	--radius: 4px;
 	--ease: cubic-bezier(0.16, 1, 0.3, 1);
 	--ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }

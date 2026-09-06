@@ -65,39 +65,63 @@ export class CinematicRig {
 		 * roll:      camera roll in radians.
 		 */
 		this.keyframes = [
-			{ progress: 0.0, yaw: 0.0, pitch: 0.06, fov: 45, fill: 0.62, offset: [0, 0], roll: 0 },
+			{ progress: 0.0, yaw: 0.0, pitch: 0.08, fov: 44, fill: 0.64, offset: [0, 0], roll: 0 },
 			{
 				progress: 0.12,
-				yaw: 0.22,
-				pitch: 0.1,
-				fov: 42,
-				fill: 0.74,
-				offset: [0.05, 0],
-				roll: -0.02
-			},
-			{ progress: 0.25, yaw: -0.1, pitch: 0.02, fov: 38, fill: 0.86, offset: [0, 0.02], roll: 0 },
-			{
-				progress: 0.35,
-				yaw: 0.5,
-				pitch: 0.28,
-				fov: 34,
-				fill: 0.82,
-				offset: [0.04, 0.1],
-				roll: 0.03
-			},
-			{ progress: 0.53, yaw: 0.75, pitch: 0.18, fov: 45, fill: 0.7, offset: [0, 0], roll: -0.04 },
-			{ progress: 0.67, yaw: 0.32, pitch: 0.12, fov: 44, fill: 0.76, offset: [0, 0.04], roll: 0 },
-			{
-				progress: 0.77,
-				yaw: -0.28,
-				pitch: -0.16,
-				fov: 42,
+				yaw: 0.26,
+				pitch: 0.12,
+				fov: 40,
 				fill: 0.78,
-				offset: [0, -0.04],
+				offset: [0.06, 0.01],
+				roll: -0.035
+			},
+			{
+				progress: 0.25,
+				yaw: -0.14,
+				pitch: 0.04,
+				fov: 36,
+				fill: 0.88,
+				offset: [-0.02, 0.03],
 				roll: 0.02
 			},
-			{ progress: 0.88, yaw: -0.08, pitch: 0.05, fov: 45, fill: 0.72, offset: [0, 0], roll: 0 },
-			{ progress: 1.0, yaw: 0.0, pitch: 0.04, fov: 45, fill: 0.6, offset: [0, 0], roll: 0 }
+			{
+				progress: 0.35,
+				yaw: 0.58,
+				pitch: 0.32,
+				fov: 32,
+				fill: 0.85,
+				offset: [0.05, 0.12],
+				roll: 0.045
+			},
+			{
+				progress: 0.53,
+				yaw: 0.82,
+				pitch: 0.22,
+				fov: 42,
+				fill: 0.74,
+				offset: [-0.02, 0.02],
+				roll: -0.05
+			},
+			{
+				progress: 0.67,
+				yaw: 0.38,
+				pitch: 0.15,
+				fov: 42,
+				fill: 0.8,
+				offset: [0.02, 0.05],
+				roll: 0.015
+			},
+			{
+				progress: 0.77,
+				yaw: -0.32,
+				pitch: -0.18,
+				fov: 40,
+				fill: 0.82,
+				offset: [-0.03, -0.05],
+				roll: 0.03
+			},
+			{ progress: 0.88, yaw: -0.1, pitch: 0.06, fov: 44, fill: 0.75, offset: [0, 0], roll: -0.015 },
+			{ progress: 1.0, yaw: 0.0, pitch: 0.04, fov: 44, fill: 0.62, offset: [0, 0], roll: 0 }
 		];
 	}
 
