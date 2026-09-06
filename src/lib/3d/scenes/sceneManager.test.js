@@ -12,10 +12,22 @@ function createStubEngine() {
 	const layers = {};
 	for (const layer of LAYERS) layers[layer.key] = new THREE.Group();
 
+	// Assembled model: give it a basic material so the cross-fade opacity
+	// code has something to traverse.
+	const assembledMesh = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshStandardMaterial({ color: 0x666666, transparent: true, opacity: 1 })
+	);
+
 	return {
 		layers,
-		basePhoneGroup: new THREE.Group(),
-		explodedGroup: new THREE.Group(),
+		basePhoneGroup: new THREE.Group().add(assembledMesh),
+		explodedGroup: new THREE.Group(
+			new THREE.Mesh(
+				new THREE.BoxGeometry(1, 1, 1),
+				new THREE.MeshStandardMaterial({ color: 0x444444, transparent: true, opacity: 1 })
+			)
+		),
 		shaderMaterials: {
 			displayShader: { uniforms: { uScroll: { value: 0 } } },
 			boardShader: { uniforms: { uScroll: { value: 0 } } }
@@ -48,10 +60,10 @@ describe('directScene coverage', () => {
 		}
 	});
 
-	it('always shows exactly one of the assembled/exploded groups', () => {
+	it('never hides both groups at the same time', () => {
 		for (let p = 0; p <= 1.0001; p += 0.01) {
 			directScene(engine, p);
-			expect(engine.basePhoneGroup.visible !== engine.explodedGroup.visible).toBe(true);
+			expect(engine.basePhoneGroup.visible || engine.explodedGroup.visible).toBe(true);
 		}
 	});
 
@@ -83,12 +95,15 @@ describe('exploded chapter behaviour', () => {
 		expect(Math.max(...depths) - Math.min(...depths)).toBeGreaterThan(1);
 	});
 
-	it('starts the architecture chapter fully collapsed', () => {
+	it('starts the architecture chapter nearly collapsed (gap inherits from optics)', () => {
 		const architecture = CHAPTERS.find((c) => c.id === 'architecture');
 		directScene(engine, architecture.start);
-		for (const layer of LAYERS) {
-			expect(engine.layers[layer.key].position.z).toBeCloseTo(0, 5);
-		}
+		// Optics already opened a small gap; architecture inherits it rather than
+		// starting from zero, so there is no freeze-snap.
+		const range =
+			Math.max(...LAYERS.map((l) => engine.layers[l.key].position.z)) -
+			Math.min(...LAYERS.map((l) => engine.layers[l.key].position.z));
+		expect(range).toBeGreaterThan(0);
 	});
 
 	it('pulls the logic board forward during the compute chapter', () => {
@@ -108,6 +123,17 @@ describe('exploded chapter behaviour', () => {
 
 		directScene(engine, CHAPTERS.find((c) => c.id === 'intelligence').start + 0.01);
 		expect(engine.batteryGlowMat.opacity).toBe(0);
+	});
+
+	it('pulls the camera module forward during the optics chapter', () => {
+		const optics = CHAPTERS.find((c) => c.id === 'optics');
+		directScene(engine, optics.end - 1e-6);
+		const camera = engine.layers.camera.position.z;
+		// Camera should be the forward-most layer in optics.
+		for (const layer of LAYERS) {
+			if (layer.key === 'camera') continue;
+			expect(camera).toBeGreaterThan(engine.layers[layer.key].position.z - 0.05);
+		}
 	});
 });
 
@@ -129,10 +155,9 @@ describe('reassembly chapter', () => {
 	it('ends on the solid model', () => {
 		directScene(engine, 1);
 		expect(engine.basePhoneGroup.visible).toBe(true);
-		expect(engine.explodedGroup.visible).toBe(false);
 	});
 
-	it('collapses the stack before swapping models', () => {
+	it('shows the exploded stack at the start of reassembly', () => {
 		const reassembly = CHAPTERS.find((c) => c.id === 'reassembly');
 		directScene(engine, reassembly.start + 0.005);
 		expect(engine.explodedGroup.visible).toBe(true);

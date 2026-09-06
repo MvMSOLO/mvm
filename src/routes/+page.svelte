@@ -166,7 +166,7 @@
 				class:right={index % 2 === 1}
 				aria-labelledby="{chapter.id}-title"
 			>
-				<div class="card" use:reveal={{ threshold: 0.3 }}>
+				<div class="card" use:reveal={{ threshold: 0.12 }}>
 					<span class="badge">{chapter.badge}</span>
 
 					{#if index === 0}

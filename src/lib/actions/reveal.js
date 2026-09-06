@@ -7,7 +7,7 @@
  * @param {{ threshold?: number, once?: boolean, delay?: number }} [params]
  */
 export function reveal(node, params = {}) {
-	const { threshold = 0.2, once = true, delay = 0 } = params;
+	const { threshold = 0.15, once = true, delay = 0 } = params;
 
 	const reducedMotion =
 		typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

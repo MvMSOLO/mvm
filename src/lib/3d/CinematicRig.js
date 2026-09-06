@@ -197,7 +197,7 @@ export class CinematicRig {
 		);
 		this.targetPos.copy(this.targetLookAt).addScaledVector(dir, distance);
 
-		const factor = 1 - Math.exp(-6 * Math.max(deltaTime, 0.0001));
+		const factor = 1 - Math.exp(-3.2 * Math.max(deltaTime, 0.0001));
 
 		if (!this.hasOrbit) {
 			this.currentYaw = yaw;
@@ -229,9 +229,9 @@ export class CinematicRig {
 
 		// Idle breath and shake scale with the subject so they read the same at
 		// any model size.
-		const amplitude = radius * 0.008;
-		const breathX = elapsedTime ? Math.sin(elapsedTime * 0.8) * amplitude : 0;
-		const breathY = elapsedTime ? Math.cos(elapsedTime * 0.6) * amplitude : 0;
+		const amplitude = radius * 0.004;
+		const breathX = elapsedTime ? Math.sin(elapsedTime * 0.4) * amplitude : 0;
+		const breathY = elapsedTime ? Math.cos(elapsedTime * 0.3) * amplitude : 0;
 
 		let shakeX = 0;
 		let shakeY = 0;
@@ -240,7 +240,7 @@ export class CinematicRig {
 			shakeY = (Math.random() - 0.5) * this.shakeIntensity * radius;
 			// Time-based decay so the shake lasts the same wall-clock duration
 			// regardless of frame rate.
-			this.shakeIntensity *= Math.exp(-8 * deltaTime);
+			this.shakeIntensity *= Math.exp(-14 * deltaTime);
 		} else {
 			this.shakeIntensity = 0;
 		}

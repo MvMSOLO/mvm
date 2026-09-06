@@ -180,14 +180,18 @@ button {
 }
 
 /* Scroll reveal, applied by the `reveal` action. */
+/* A 0.2 fade-band at each end means the element starts clearing at 80% of the
+   viewport threshold (20% early), and finishes its entrance by 80% through.
+   This keeps the text crisp while scrolling rather than waiting for the last
+   pixel to cross the threshold before starting to appear. */
 .reveal {
 	opacity: 0;
-	transform: translateY(28px);
-	filter: blur(6px);
+	transform: translateY(22px);
+	filter: blur(4px);
 	transition:
-		opacity 0.9s var(--ease) var(--reveal-delay, 0ms),
-		transform 0.9s var(--ease) var(--reveal-delay, 0ms),
-		filter 0.7s var(--ease-out-quart) var(--reveal-delay, 0ms);
+		opacity 1.1s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0ms),
+		transform 1.1s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0ms),
+		filter 0.9s var(--ease-out-quart) var(--reveal-delay, 0ms);
 	will-change: opacity, transform, filter;
 }
 
