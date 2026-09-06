@@ -163,7 +163,7 @@ export class PhoneSceneEngine {
 		// AgX keeps saturated accents (the cyan UI glow) from clipping to white the
 		// way ACES does, and rolls highlights off closer to a real camera sensor.
 		this.renderer.toneMapping = THREE.AgXToneMapping;
-		this.renderer.toneMappingExposure = 1.35;
+		this.renderer.toneMappingExposure = 1.5;
 		this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 		container.appendChild(this.renderer.domElement);
 		this.renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -452,23 +452,21 @@ export class PhoneSceneEngine {
 		const glassGeo = createSlabGeometry({ depth: 0.014 });
 		const glassMat = new THREE.MeshPhysicalMaterial({
 			color: 0xffffff,
-			metalness: 0,
-			roughness: 0.04,
-			// Real glass: refractive index and thickness, plus an oleophobic clearcoat.
-			ior: 1.52,
-			transmission: 0.92,
-			thickness: 0.4,
+			metalness: 0.02,
+			roughness: 0.03,
+			// Ultra-realistic sapphire glass with high transmission and refractive index
+			ior: 1.55,
+			transmission: 0.95,
+			thickness: 0.5,
 			clearcoat: 1,
-			clearcoatRoughness: 0.06,
-			// Fingerprint oil and dust. Perfectly clean glass is the single most
-			// obvious tell that an image was rendered rather than photographed.
+			clearcoatRoughness: 0.04,
 			clearcoatRoughnessMap: micro.smudge,
-			sheen: 0.3,
-			sheenRoughness: 0.25,
-			specularIntensity: 1,
+			sheen: 0.4,
+			sheenRoughness: 0.2,
+			specularIntensity: 1.35,
 			transparent: true,
-			opacity: 0.4,
-			envMapIntensity: 1.6 * env,
+			opacity: 0.45,
+			envMapIntensity: 2.2 * env,
 			side: THREE.DoubleSide
 		});
 		this.layers.glass.add(new THREE.Mesh(glassGeo, glassMat));
@@ -531,17 +529,15 @@ export class PhoneSceneEngine {
 		const frameGeo = createRailGeometry();
 		const frameMat = new THREE.MeshPhysicalMaterial({
 			color: 0x5a5d65,
-			metalness: 0.95,
-			roughness: 0.22,
-			// Brushed titanium is anisotropic: the highlight stretches along the
-			// machining direction instead of staying a round dot. This single
-			// property is most of the difference between "metal" and "grey plastic".
-			anisotropy: 0.65,
+			metalness: 0.98,
+			roughness: 0.18,
+			// Precision anisotropic titanium rail with brilliant directional sheen
+			anisotropy: 0.8,
 			anisotropyRotation: Math.PI / 2,
-			// Micro-scratches from the polishing wheel, so the highlight breaks up
-			// along the machining direction instead of sliding as a clean streak.
 			roughnessMap: micro.brushed,
-			envMapIntensity: 1.8 * env
+			clearcoat: 0.5,
+			clearcoatRoughness: 0.15,
+			envMapIntensity: 2.4 * env
 		});
 		this.layers.frame.add(new THREE.Mesh(frameGeo, frameMat));
 		this.disposeLater(frameGeo, frameMat);
@@ -579,17 +575,16 @@ export class PhoneSceneEngine {
 			roughness: 0.2
 		});
 		const lensMat = new THREE.MeshPhysicalMaterial({
-			color: 0x0a1a24,
-			metalness: 0.4,
-			roughness: 0.04,
+			color: 0x071522,
+			metalness: 0.45,
+			roughness: 0.02,
 			clearcoat: 1,
-			clearcoatRoughness: 0.02,
-			// Anti-reflective coating: a thin film, so the lens picks up the blue/violet
-			// shift you see on every real camera module at a glancing angle.
-			iridescence: 0.55,
-			iridescenceIOR: 1.9,
-			iridescenceThicknessRange: [180, 520],
-			envMapIntensity: 2.2 * env
+			clearcoatRoughness: 0.01,
+			// Multi-layer anti-reflective optical coating with rich iridescence
+			iridescence: 0.85,
+			iridescenceIOR: 2.1,
+			iridescenceThicknessRange: [160, 580],
+			envMapIntensity: 3.2 * env
 		});
 		this.disposeLater(barrelGeo, ringGeo, lensGeo, tofGeo, barrelMat, lensMat);
 

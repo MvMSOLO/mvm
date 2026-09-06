@@ -25,6 +25,11 @@
 
 	{#if telemetryOpen}
 		<div class="hud-panel">
+			<span class="corner-tl"></span>
+			<span class="corner-tr"></span>
+			<span class="corner-bl"></span>
+			<span class="corner-br"></span>
+
 			<div class="hud-header">
 				<span class="mono title">TELEMETRY DIAGNOSTICS</span>
 				<span class="mono status">ONLINE [8K]</span>
@@ -100,17 +105,53 @@
 	}
 
 	.hud-panel {
+		position: relative;
 		width: 280px;
 		padding: 1rem;
-		background: rgba(10, 15, 25, 0.82);
-		border: 1px solid rgba(0, 240, 255, 0.2);
+		background: rgba(10, 15, 25, 0.85);
+		border: 1px solid rgba(0, 240, 255, 0.25);
 		border-radius: var(--radius);
-		backdrop-filter: blur(16px);
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(18px);
+		box-shadow:
+			0 8px 32px rgba(0, 0, 0, 0.6),
+			inset 0 0 15px rgba(0, 240, 255, 0.05);
 		display: flex;
 		flex-direction: column;
 		gap: 0.8rem;
 		animation: slideIn 0.35s var(--ease);
+	}
+
+	.corner-tl,
+	.corner-tr,
+	.corner-bl,
+	.corner-br {
+		position: absolute;
+		width: 6px;
+		height: 6px;
+		border-color: var(--accent);
+		border-style: solid;
+		pointer-events: none;
+	}
+
+	.corner-tl {
+		top: -1px;
+		left: -1px;
+		border-width: 2px 0 0 2px;
+	}
+	.corner-tr {
+		top: -1px;
+		right: -1px;
+		border-width: 2px 2px 0 0;
+	}
+	.corner-bl {
+		bottom: -1px;
+		left: -1px;
+		border-width: 0 0 2px 2px;
+	}
+	.corner-br {
+		bottom: -1px;
+		right: -1px;
+		border-width: 0 2px 2px 0;
 	}
 
 	.hud-header {
